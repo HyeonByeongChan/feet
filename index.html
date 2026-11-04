@@ -1,0 +1,1851 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>족구 동우회 스마트앱</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter & Noto Sans KR -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        jokgu: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#14532d',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Noto Sans KR', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        /* Custom Scrollbar for inner tabs */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* 목록 스크롤바 (기본버전과 동일) */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        /* 목록 좌우 스크롤: 카드가 내용 폭만큼 늘어나 오른쪽 끝까지 볼 수 있음 */
+        .hscroll > * { width: max-content; min-width: 100%; }
+        /* 상단 탭 바: 좌우 스크롤 (스크롤바 표시, 손가락 스와이프·마우스 드래그·휠 지원) */
+        .tabbar { -webkit-overflow-scrolling: touch; scrollbar-width: thin; scrollbar-color: #16a34a #e2e8f0; cursor: grab; }
+        .tabbar::-webkit-scrollbar { height: 6px; }
+        .tabbar::-webkit-scrollbar-thumb { background: #16a34a; border-radius: 4px; }
+        .tabbar::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 4px; }
+        .tabbar.dragging { cursor: grabbing; }
+        /* Digital Clock LCD Font style */
+        .lcd-font {
+            font-family: 'Courier New', Courier, monospace;
+            letter-spacing: 2px;
+        }
+    </style>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased pb-20">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-jokgu-700 text-white sticky top-0 z-40 shadow-md">
+        <div class="max-w-md mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fa-solid fa-volleyball text-amber-400 text-xl animate-pulse"></i>
+                <h1 id="appHeaderTitle" class="font-bold text-lg tracking-tight">족구 스마트 앱</h1>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button onclick="shareKakao()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow transition">
+                    <i class="fa-solid fa-share-nodes"></i> 공유
+                </button>
+                <button onclick="logout()" id="logoutBtn" class="hidden bg-red-500 hover:bg-red-600 text-white px-2.5 py-1 rounded-full text-xs font-bold transition">
+                    <i class="fa-solid fa-right-from-bracket"></i> 잠금
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container (Mobile Portrait Optimized) -->
+    <main class="max-w-md mx-auto min-h-screen p-3 space-y-4">
+
+        <!-- Banner / Quick Status -->
+        <div id="loggedHeaderInfo" class="hidden bg-white rounded-2xl p-3 shadow-sm border border-slate-200 flex justify-between items-center text-xs">
+            <div>
+                <span class="text-slate-400">접속 동우회:</span>
+                <span id="currentClubDisplay" class="font-bold text-jokgu-700 text-sm ml-1">-</span>
+            </div>
+            <div id="liveClockMini" class="lcd-font font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                00:00:00
+            </div>
+        </div>
+
+        <!-- 1. AUTH & CLUB ACCESS SCREEN (Lock Screen) -->
+        <section id="sec-1" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 bg-jokgu-100 text-jokgu-600 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl shadow-inner">
+                    <i class="fa-solid fa-users-gear"></i>
+                </div>
+                <h2 class="text-xl font-bold text-slate-800">동우회 로그인 및 관리</h2>
+                <p class="text-xs text-slate-500 mt-1">동우회 이름과 4자리(특수문자 1개 포함) 암호를 입력하세요.</p>
+            </div>
+
+            <form id="authForm" onsubmit="handleAuth(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">동우회 이름</label>
+                    <input type="text" id="clubNameInput" required placeholder="예: 족구사랑클럽" class="w-full px-3 py-2.5 text-sm border rounded-xl focus:ring-2 focus:ring-jokgu-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">비밀번호 (4자리 + 특수문자 1개 필수, 예: 1234!)</label>
+                    <input type="password" id="clubPwInput" required placeholder="예: 1234!" class="w-full px-3 py-2.5 text-sm border rounded-xl focus:ring-2 focus:ring-jokgu-500 outline-none">
+                </div>
+                <button type="submit" class="w-full bg-jokgu-600 hover:bg-jokgu-700 text-white font-bold py-3 rounded-xl shadow-lg transition text-sm flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-key"></i> 동우회 접속 / 생성
+                </button>
+            </form>
+
+            <div id="pwChangeArea" class="hidden mt-6 pt-4 border-t border-slate-100">
+                <h3 class="text-xs font-bold text-slate-700 mb-2">🔑 최초 생성자 비밀번호 변경</h3>
+                <div class="space-y-2">
+                    <input type="password" id="newPwInput" placeholder="새 비밀번호 (4자리+특수문자)" class="w-full px-3 py-2 text-xs border rounded-lg">
+                    <button onclick="changePassword()" class="w-full bg-slate-800 text-white text-xs font-bold py-2 rounded-lg">비밀번호 변경하기</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- MAIN NAVIGATION TABS (Sections 2 to 12) - Visible only when unlocked -->
+        <div id="appBody" class="hidden space-y-4">
+
+            <!-- Horizontal Quick Sub-Nav Scrollbar -->
+            <div id="tabBar" class="tabbar bg-white p-2 pb-3 rounded-2xl shadow-sm border border-slate-200 overflow-x-auto flex space-x-1 text-xs font-medium">
+                <button onclick="switchTab(2)" id="tabBtn-2" class="px-3 py-2 rounded-xl shrink-0 transition">현역/회칙</button>
+                <button onclick="switchTab(3)" id="tabBtn-3" class="px-3 py-2 rounded-xl shrink-0 transition">집행부</button>
+                <button onclick="switchTab(4)" id="tabBtn-4" class="px-3 py-2 rounded-xl shrink-0 transition">선수등록</button>
+                <button onclick="switchTab(5)" id="tabBtn-5" class="px-3 py-2 rounded-xl shrink-0 transition">출석체크</button>
+                <button onclick="switchTab(6)" id="tabBtn-6" class="px-3 py-2 rounded-xl shrink-0 transition">선수구성</button>
+                <button onclick="switchTab(7)" id="tabBtn-7" class="px-3 py-2 rounded-xl shrink-0 transition">게임팀구성</button>
+                <button onclick="switchTab(8)" id="tabBtn-8" class="px-3 py-2 rounded-xl shrink-0 transition">점수판</button>
+                <button onclick="switchTab(9)" id="tabBtn-9" class="px-3 py-2 rounded-xl shrink-0 transition">투표</button>
+                <button onclick="switchTab(10)" id="tabBtn-10" class="px-3 py-2 rounded-xl shrink-0 transition">공지사항</button>
+                <button onclick="switchTab(11)" id="tabBtn-11" class="px-3 py-2 rounded-xl shrink-0 transition">시계</button>
+                <button onclick="switchTab(12)" id="tabBtn-12" class="px-3 py-2 rounded-xl shrink-0 transition">동영상기록</button>
+            </div>
+
+            <!-- SECTION 2: 동우회 현역 / 회칙 -->
+            <section id="sec-2" class="hidden tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+                <div class="border-b pb-2 flex justify-between items-center">
+                    <h2 class="font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-shield-halved text-jokgu-600"></i> 동우회 현역 및 회칙</h2>
+                    <button onclick="openHistoryModal()" class="bg-jokgu-600 text-white text-xs px-2.5 py-1.5 rounded-lg font-bold">+ 신규 등록</button>
+                </div>
+                <div id="historyList" class="space-y-3 max-h-80 overflow-y-auto overflow-x-auto hscroll">
+                    <!-- History cards injected via JS -->
+                </div>
+            </section>
+
+            <!-- SECTION 3: 동우회 집행부 -->
+            <section id="sec-3" class="hidden tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+                <div class="border-b pb-2 flex justify-between items-center">
+                    <h2 class="font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-user-tie text-jokgu-600"></i> 동우회 집행부 임원</h2>
+                    <button onclick="openExecModal()" class="bg-jokgu-600 text-white text-xs px-2.5 py-1.5 rounded-lg font-bold">+ 임원 구성 추가</button>
+                </div>
+                <div id="execList" class="space-y-3 max-h-72 overflow-y-auto overflow-x-auto hscroll">
+                    <!-- Exec Cards injected via JS -->
+                </div>
+            </section>
+
+            <!-- SECTION 4: 선수등록 -->
+            <section id="sec-4" class="hidden tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+                <div class="border-b pb-2 flex justify-between items-center">
+                    <h2 class="font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-id-card text-jokgu-600"></i> 선수 등록 관리</h2>
+                    <button onclick="openPlayerModal()" class="bg-jokgu-600 text-white text-xs px-2.5 py-1.5 rounded-lg font-bold">+ 선수 등록</button>
+                </div>
+                <!-- Search Filter -->
+                <div class="grid grid-cols-2 gap-2 bg-slate-50 p-2 rounded-xl">
+                    <input type="text" id="playerSearchName" oninput="renderPlayerList()" placeholder="성명 검색" class="border px-2.5 py-1.5 rounded-lg text-xs">
+                    <select id="playerSearchAge" onchange="renderPlayerList()" class="border px-2.5 py-1.5 rounded-lg text-xs">
+                        <option value="">전체 연령대</option>
+                        <option value="20대">20대</option>
+                        <option value="30대">30대</option>
+                        <option value="40대">40대</option>
+                        <option value="50대">50대</option>
+                        <option value="60대">60대</option>
+                        <option value="70대">70대</option>
+                    </select>
+                </div>
+                <div id="playerList" class="space-y-3 max-h-64 overflow-y-auto overflow-x-auto hscroll">
+                    <!-- Players injected here -->
+                </div>
+            </section>
+
+            <!-- SECTION 5: 출석체크 -->
+            <section id="sec-5" class="hidden tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+                <div class="border-b pb-2 flex justify-between items-center">
+                    <h2 class="font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-clipboard-user text-jokgu-600"></i> 출석 및 퇴근 체크</h2>
+                    <span class="text-xs text-slate-400" id="todayDateStr"></span>
+                </div>
+                <div>
+                    <input type="text" id="attendSearchInput" oninput="renderAttendanceList()" placeholder="등록 선수 성명 검색..." class="w-full px-3 py-2 border rounded-xl text-xs mb-3">
+                    <div id="attendList" class="space-y-2 max-h-60 overflow-y-auto p-1">
+                        <!-- Attend items injected -->
+                    </div>
+                </div>
+                <div class="border-t pt-3">
+                    <h3 class="font-bold text-xs text-slate-700 mb-2"><i class="fa-solid fa-list-check"></i> 오늘 출석/퇴근 기록</h3>
+                    <div id="attendHistoryList" class="space-y-2 text-xs max-h-52 overflow-y-auto overflow-x-auto hscroll">
+                        <!-- Attendance logs injected -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 6: 선수구성 (기본버전 방식) -->
+            <section id="sec-6" class="hidden tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+                <div class="border-b pb-2 flex justify-between items-center">
+                    <h2 class="font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-people-group text-jokgu-600"></i> 팀별 선수 구성 (6개 세트)</h2>
+                    <button onclick="speakAllSquad()" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 shadow">
+                        <i class="fa-solid fa-volume-high"></i> 전체 음성
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">세트 선택</label>
+                        <select id="squadSetSelect" onchange="renderSquadUI()" class="w-full border px-2 py-1.5 rounded-lg bg-slate-50 font-bold">
+                            <option value="1">1세트</option><option value="2">2세트</option><option value="3">3세트</option><option value="4">4세트</option><option value="5">5세트</option><option value="6">6세트</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">팀 선택 (2~6팀)</label>
+                        <select id="squadTeamCount" onchange="renderSquadUI()" class="w-full border px-2 py-1.5 rounded-lg bg-slate-50 font-bold">
+                            <option value="2">2팀 (A,B)</option>
+                            <option value="3">3팀 (A,B,C)</option>
+                            <option value="4">4팀 (A,B,C,D)</option>
+                            <option value="5">5팀 (A,B,C,D,E)</option>
+                            <option value="6" selected>6팀 (A~F)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="bg-emerald-50 p-2.5 rounded-xl border border-emerald-100">
+                    <p class="text-xs font-bold text-emerald-800 mb-1.5"><i class="fa-solid fa-circle-check"></i> 출석 선수 (터치하면 팀·포지션 배정, 퇴근 선수 제외)</p>
+                    <div id="squadPool" class="flex flex-wrap gap-1.5"></div>
+                </div>
+
+                <div id="squadTeamsContainer" class="space-y-3 max-h-80 overflow-y-auto"></div>
+
+                <button onclick="saveSquadCheck()" class="w-full bg-jokgu-600 text-white text-xs font-bold py-2.5 rounded-xl shadow">
+                    <i class="fa-solid fa-floppy-disk"></i> 저장 상태 확인 (배치는 자동 저장됩니다)
+                </button>
+            </section>
+
+            <!-- SECTION 7: 게임팀 구성 (League Matrix) -->
+            <section id="sec-7" class="hidden tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+                <div class="border-b pb-2 flex justify-between items-center">
+                    <h2 class="font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-trophy text-jokgu-600"></i> 게임팀 리그 대진 구성</h2>
+                    <span class="text-[11px] text-slate-500 font-bold bg-slate-100 px-2 py-0.5 rounded-full">매치별 코트 별도지정 가능</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="col-span-2 sm:col-span-1">
+                        <label class="block font-bold text-slate-700 mb-1">팀 수 선택</label>
+                        <select id="matchTeamCount" onchange="generateLeagueMatches()" class="w-full border px-2 py-2 rounded-lg bg-slate-50 font-bold text-slate-800">
+                            <option value="3">3팀 대진 (3경경기)</option>
+                            <option value="4">4팀 대진 (6경기)</option>
+                            <option value="5">5팀 대진 (10경기)</option>
+                            <option value="6">6팀 대진 (16경기)</option>
+                        </select>
+                    </div>
+                    <div class="col-span-2 sm:col-span-1">
+                        <label class="block font-bold text-slate-700 mb-1">전체 일괄 코트 적용</label>
+                        <select id="matchCourtSelect" onchange="applyAllCourts()" class="w-full border px-2 py-2 rounded-lg bg-slate-50 text-slate-700">
+                            <option value="1코트">1코트 적용</option>
+                            <option value="2코트">2코트 적용</option>
+                            <option value="3코트">3코트 적용</option>
+                            <option value="4코트">4코트 적용</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Match List Check items -->
+                <div id="leagueMatchList" class="space-y-2 max-h-80 overflow-y-auto overflow-x-auto hscroll">
+                    <!-- Matches injected via JS -->
+                </div>
+            </section>
+
+            <!-- SECTION 8: 점수판 (Scoreboard & Loud Whistle) -->
+            <section id="sec-8" class="hidden tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+                <div class="border-b pb-2 flex justify-between items-center">
+                    <h2 class="font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-scoreboard text-jokgu-600"></i> 점수판 & 호루라기</h2>
+                    <button onclick="playWhistleSound()" class="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1.5 rounded-full font-black animate-bounce shadow-lg flex items-center gap-1">
+                        <i class="fa-solid fa-bullhorn"></i> 호루라기 소리
+                    </button>
+                </div>
+
+                <!-- Digital Match Timer -->
+                <div class="bg-slate-900 text-green-400 p-3 rounded-2xl text-center shadow-inner">
+                    <div class="text-xs text-slate-400 mb-1">MATCH TIMER</div>
+                    <div id="matchTimerDisplay" class="lcd-font text-3xl font-bold">00:00</div>
+                    <div class="flex justify-center gap-2 mt-2">
+                        <button onclick="startMatchTimer()" class="bg-green-600 text-white px-3 py-1 rounded text-xs">시작</button>
+                        <button onclick="pauseMatchTimer()" class="bg-amber-600 text-white px-3 py-1 rounded text-xs">정지</button>
+                        <button onclick="resetMatchTimer()" class="bg-slate-700 text-white px-3 py-1 rounded text-xs">초기화</button>
+                    </div>
+                </div>
+
+                <!-- 20 Sets Control -->
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center text-xs font-bold text-slate-700">
+                        <label>세트 선택 (1 ~ 20):</label>
+                        <select id="scoreSetSelect" onchange="loadScoreSet()" class="border px-2 py-1 rounded-lg">
+                            <!-- 20 Sets options generated -->
+                        </select>
+                    </div>
+
+                    <!-- Score board counter -->
+                    <div class="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border">
+                        <div class="text-center space-y-1">
+                            <input type="text" id="scoreTeamA" value="A팀" class="w-full text-center font-bold text-xs border rounded p-1">
+                            <div id="scoreA" class="text-4xl font-black text-blue-600 my-2">0</div>
+                            <div class="flex justify-center gap-1">
+                                <button onclick="changeScore('A', 1)" class="bg-blue-500 text-white px-3 py-1 rounded font-bold text-sm">+</button>
+                                <button onclick="changeScore('A', -1)" class="bg-slate-300 text-slate-700 px-3 py-1 rounded font-bold text-sm">-</button>
+                            </div>
+                        </div>
+                        <div class="text-center space-y-1">
+                            <input type="text" id="scoreTeamB" value="B팀" class="w-full text-center font-bold text-xs border rounded p-1">
+                            <div id="scoreB" class="text-4xl font-black text-red-600 my-2">0</div>
+                            <div class="flex justify-center gap-1">
+                                <button onclick="changeScore('B', 1)" class="bg-red-500 text-white px-3 py-1 rounded font-bold text-sm">+</button>
+                                <button onclick="changeScore('B', -1)" class="bg-slate-300 text-slate-700 px-3 py-1 rounded font-bold text-sm">-</button>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="saveCurrentSetScore()" class="w-full bg-jokgu-600 text-white text-xs font-bold py-2 rounded-xl">현재 세트 점수 저장</button>
+                </div>
+
+                <!-- Saved Scores Table -->
+                <div class="border-t pt-3">
+                    <h3 class="font-bold text-xs text-slate-700 mb-2">📊 세트별 저장 목록</h3>
+                    <div id="scoreHistoryList" class="space-y-1 text-xs max-h-40 overflow-y-auto">
+                        <!-- Score history injected -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 9: 투표 (Player Poll) -->
+            <section id="sec-9" class="hidden tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+                <div class="border-b pb-2 flex justify-between items-center">
+                    <h2 class="font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-vote-yea text-jokgu-600"></i> 회원 투표</h2>
+                    <button onclick="openPollModal()" class="bg-jokgu-600 text-white text-xs px-2.5 py-1.5 rounded-lg font-bold">+ 투표 생성</button>
+                </div>
+                <div id="pollList" class="space-y-3 max-h-80 overflow-y-auto">
+                    <!-- Active Polls -->
+                </div>
+            </section>
+
+            <!-- SECTION 10: 공지사항 (Notice Board) -->
+            <section id="sec-10" class="hidden tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+                <div class="border-b pb-2 flex justify-between items-center">
+                    <h2 class="font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-bullhorn text-jokgu-600"></i> 동우회 공지사항</h2>
+                    <button onclick="openNoticeModal()" class="bg-jokgu-600 text-white text-xs px-2.5 py-1.5 rounded-lg font-bold">+ 공지 작성</button>
+                </div>
+                <div id="noticeList" class="space-y-3 max-h-80 overflow-y-auto">
+                    <!-- Notice items -->
+                </div>
+            </section>
+
+            <!-- SECTION 11: 디지털 시계 (Digital Clock) -->
+            <section id="sec-11" class="hidden tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-6 text-center space-y-4">
+                <h2 class="font-bold text-slate-800"><i class="fa-solid fa-clock text-jokgu-600"></i> 디지털 시계</h2>
+                <div class="bg-slate-900 text-emerald-400 p-6 rounded-3xl shadow-2xl border-4 border-slate-800 inline-block w-full">
+                    <div id="clockDate" class="text-xs text-slate-400 font-medium mb-1">2026-00-00 (월)</div>
+                    <div id="clockTime" class="lcd-font text-4xl sm:text-5xl font-black tracking-wider">00:00:00</div>
+                </div>
+            </section>
+
+            <!-- SECTION 12: 동영상 / 무선 카메라 기록 -->
+            <section id="sec-12" class="hidden tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+                <div class="border-b pb-2 flex justify-between items-center">
+                    <h2 class="font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-video text-jokgu-600"></i> 동영상 & 메모 기록</h2>
+                    <button onclick="openVideoModal()" class="bg-jokgu-600 text-white text-xs px-2.5 py-1.5 rounded-lg font-bold">+ 영상 등록</button>
+                </div>
+                <div id="videoList" class="space-y-3 max-h-60 overflow-y-auto overflow-x-auto hscroll">
+                    <!-- Video cards -->
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- Bottom Mobile Nav Toolbar -->
+    <nav id="bottomNav" class="hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-30 shadow-lg">
+        <div class="max-w-md mx-auto grid grid-cols-5 text-center text-[10px] text-slate-500 py-1.5">
+            <button onclick="switchTab(4)" id="bnav-4" class="py-1 flex flex-col items-center">
+                <i class="fa-solid fa-users text-sm mb-0.5"></i>선수등록
+            </button>
+            <button onclick="switchTab(5)" id="bnav-5" class="py-1 flex flex-col items-center">
+                <i class="fa-solid fa-calendar-check text-sm mb-0.5"></i>출석체크
+            </button>
+            <button onclick="switchTab(6)" id="bnav-6" class="py-1 flex flex-col items-center">
+                <i class="fa-solid fa-chess-board text-sm mb-0.5"></i>선수구성
+            </button>
+            <button onclick="switchTab(7)" id="bnav-7" class="py-1 flex flex-col items-center">
+                <i class="fa-solid fa-sitemap text-sm mb-0.5"></i>대진구성
+            </button>
+            <button onclick="switchTab(8)" id="bnav-8" class="py-1 flex flex-col items-center">
+                <i class="fa-solid fa-stopwatch text-sm mb-0.5"></i>점수판
+            </button>
+        </div>
+    </nav>
+
+    <!-- MODAL DIALOG CONTAINER -->
+    <div id="modalBackdrop" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-2xl p-4 space-y-3 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h3 id="modalTitle" class="font-bold text-sm text-slate-800">모달 제목</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div id="modalBody" class="space-y-3 text-xs">
+                <!-- Dynamic Modal Content -->
+            </div>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT APP LOGIC -->
+    <script>
+        // =====================================================================
+        //  FIREBASE 연결 (서버 공유)
+        // =====================================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyAdp2ZyhwPgE_Tv4mHVAZXm3YIb5jlwRgA",
+            authDomain: "soccerfi.firebaseapp.com",
+            projectId: "soccerfi",
+            storageBucket: "soccerfi.firebasestorage.app",
+            messagingSenderId: "187425275129",
+            appId: "1:187425275129:web:9477ecf196ebd70ea7b628",
+            measurementId: "G-B07MTX248N"
+        };
+        const fbOK = typeof firebase !== 'undefined';
+        let db = null, auth = null, storage = null;
+        if (fbOK) {
+            firebase.initializeApp(firebaseConfig);
+            auth = firebase.auth(); db = firebase.firestore(); storage = firebase.storage();
+            try { if (firebase.analytics) firebase.analytics(); } catch (e) { console.warn('Analytics off:', e.message); }
+            db.enablePersistence({ synchronizeTabs: true }).catch(err => console.warn('Persistence off:', err.code));
+        }
+        let clubId = null, clubRef = null, unsubSync = null, syncReady = false, lastSynced = {};
+
+        // 화면 데이터 ↔ 서버 문서 (clubs/{id}/data/{항목})
+        const SEC = {
+            players:      [() => players,      v => players = v],
+            attendance:   [() => attendance,   v => attendance = v],
+            historyDocs:  [() => historyDocs,  v => historyDocs = v],
+            execBoard:    [() => execBoard,    v => execBoard = v],
+            formationSets:[() => formationSets,v => formationSets = v],
+            scores:       [() => scores,       v => scores = v],
+            polls:        [() => polls,        v => polls = v],
+            notices:      [() => notices,      v => notices = v],
+            videos:       [() => videos,       v => videos = v]
+        };
+        const DEFAULTS = () => ({
+            players: [], attendance: [], historyDocs: [], execBoard: [],
+            formationSets: Array(6).fill().map(() => ({ date: '', teams: {} })),
+            scores: {}, polls: [], notices: [], videos: []
+        });
+
+        async function sha256Hex(text) {
+            if (window.crypto && crypto.subtle) {
+                const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+                return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+            }
+            let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+            for (let i = 0; i < text.length; i++) {
+                const ch = text.charCodeAt(i);
+                h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677);
+            }
+            h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+            h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+            return 'x' + (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+        }
+        async function ensureAuth() { if (!auth.currentUser) await auth.signInAnonymously(); }
+
+        function compressImage(file, maxW, maxH, quality) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onerror = reject;
+                reader.onload = evt => {
+                    const img = new Image();
+                    img.onerror = reject;
+                    img.onload = () => {
+                        const ratio = Math.min(1, maxW / img.width, maxH / img.height);
+                        const canvas = document.createElement('canvas');
+                        canvas.width = Math.round(img.width * ratio); canvas.height = Math.round(img.height * ratio);
+                        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                        canvas.toBlob(b => b ? resolve(b) : reject(new Error('압축 실패')), 'image/jpeg', quality);
+                    };
+                    img.src = evt.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+        const blobToDataURL = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+        async function uploadBlob(path, blob) {
+            const ref = storage.ref(path);
+            await ref.put(blob, blob.type ? { contentType: blob.type } : undefined);
+            return await ref.getDownloadURL();
+        }
+
+        // 서버 실시간 구독: 다른 회원이 바꾸면 내 화면에도 바로 반영
+        function startSync() {
+            syncReady = false; lastSynced = {};
+            unsubSync = clubRef.collection('data').onSnapshot(snap => {
+                snap.docs.forEach(d => {
+                    const k = d.id, json = (d.data() || {}).json;
+                    if (!SEC[k] || typeof json !== 'string' || json === lastSynced[k]) return;
+                    lastSynced[k] = json;
+                    try { SEC[k][1](JSON.parse(json)); } catch (e) { console.warn(k, e); }
+                });
+                if (!syncReady) {   // 서버에 아직 없는 항목은 '빈 상태'를 기준값으로 (빈 값으로 덮어쓰기 방지)
+                    Object.keys(SEC).forEach(k => { if (lastSynced[k] === undefined) lastSynced[k] = JSON.stringify(SEC[k][0]()); });
+                    syncReady = true;
+                }
+                refreshView();
+            }, err => alert('서버 연결 오류: ' + err.message));
+        }
+        function stopSync() { if (unsubSync) { unsubSync(); unsubSync = null; } syncReady = false; }
+
+        function refreshView() {
+            const t = activeTab;
+            if (t === 2) renderHistoryList();
+            if (t === 3) renderExecList();
+            if (t === 4) renderPlayerList();
+            if (t === 5) renderAttendanceList();
+            if (t === 6) renderSquadUI();
+            if (t === 8) renderScoreHistory();
+            if (t === 9) renderPolls();
+            if (t === 10) renderNotices();
+            if (t === 12) renderVideos();
+        }
+
+        // 동시 입력이 몰리는 항목(출석·투표)은 서버 값을 읽어 고친 뒤 저장 → 남의 입력을 덮어쓰지 않음
+        async function mutate(key, fn) {
+            const ref = clubRef.collection('data').doc(key);
+            try {
+                const out = await db.runTransaction(async tx => {
+                    const snap = await tx.get(ref);
+                    const cur = snap.exists ? JSON.parse(snap.data().json) : DEFAULTS()[key];
+                    if (fn(cur) === false) return false;
+                    const json = JSON.stringify(cur);
+                    tx.set(ref, { json, updatedAt: Date.now() });
+                    return json;
+                });
+                if (out) { lastSynced[key] = out; SEC[key][1](JSON.parse(out)); }
+                return out;
+            } catch (e) {
+                console.error(e);
+                alert('서버 저장에 실패했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.\n' + (e.message || e));
+                return false;
+            }
+        }
+
+        // --- APP STATE ---
+        let currentClub = null;
+        let activeTab = 2;
+        let players = [];
+        let attendance = []; // { id, playerId, date, clockIn, clockOut }
+        let historyDocs = [];
+        let execBoard = [];
+        let formationSets = Array(6).fill().map(() => ({ date: '', teams: {} }));
+        let scores = {}; // setIndex: { teamA, teamB, scoreA, scoreB, date }
+        let polls = [];
+        let notices = [];
+        let videos = [];
+        let matchTimerInterval = null;
+        let matchTimerSeconds = 0;
+
+        // --- INITIALIZATION ---
+        window.onload = function() {
+            startClock();
+            checkAutoLogin();
+            initScoreOptions();
+            document.getElementById('todayDateStr').innerText = getTodayStr();
+        };
+
+        function getTodayStr() {
+            const now = new Date();
+            return now.toISOString().split('T')[0];
+        }
+
+        // --- DIGITAL CLOCK ---
+        function startClock() {
+            setInterval(() => {
+                const now = new Date();
+                const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+                const days = ['일','월','화','수','목','금','토'];
+                const dayStr = days[now.getDay()];
+                const timeStr = now.toTimeString().split(' ')[0];
+
+                document.getElementById('liveClockMini').innerText = timeStr;
+                document.getElementById('clockDate').innerText = `${dateStr} (${dayStr})`;
+                document.getElementById('clockTime').innerText = timeStr;
+            }, 1000);
+        }
+
+        // --- AUTH & LOCK CONTROL ---
+        async function handleAuth(e) {
+            e.preventDefault();
+            const clubName = document.getElementById('clubNameInput').value.trim();
+            const pw = document.getElementById('clubPwInput').value.trim();
+            if (!fbOK) { alert('Firebase를 불러오지 못했습니다. 인터넷 연결을 확인해주세요.'); return; }
+            if (pw.length < 4 || !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pw)) {
+                alert('비밀번호는 4자 이상이며 특수문자(!@#$%^&* 등)가 1개 이상 포함되어야 합니다. (예: 1234!)');
+                return;
+            }
+            const btn = e.target.querySelector('button[type="submit"]');
+            const label = btn.innerHTML;
+            btn.disabled = true; btn.innerText = '서버 접속 중...';
+            try {
+                await ensureAuth();
+                const id = await sha256Hex(`${clubName.toLowerCase()}::${pw}::jokgu-v1`);
+                const ref = db.collection('clubs').doc(id);
+                const snap = await ref.get();
+                if (!snap.exists) {
+                    if (!confirm(`'${clubName}' 동우회가 아직 없습니다.\n이 이름과 비밀번호로 새로 만들까요?\n\n(기존 동우회에 들어가려는 거라면 이름/비밀번호 오타일 수 있으니 [취소]를 누르세요)`)) return;
+                    await ref.set({ name: clubName, createdAt: Date.now() });
+                }
+                document.getElementById('clubPwInput').value = '';
+                enterClub(id, clubName);
+            } catch (err) {
+                console.error(err);
+                alert('서버 연결에 실패했습니다.\n' + (err.message || err));
+            } finally {
+                btn.disabled = false; btn.innerHTML = label;
+            }
+        }
+
+        function enterClub(id, name) {
+            stopSync();
+            clubId = id; currentClub = name; clubRef = db.collection('clubs').doc(id);
+            localStorage.setItem('jokgu_active_club', JSON.stringify({ id, name }));
+            loadClubData();
+            startSync();
+            unlockApp();
+        }
+
+        async function checkAutoLogin() {
+            const raw = localStorage.getItem('jokgu_active_club');
+            if (!raw || !fbOK) return;
+            let s = null;
+            try { s = JSON.parse(raw); } catch (e) {}
+            if (!s || !s.id) { localStorage.removeItem('jokgu_active_club'); return; }
+            try {
+                await ensureAuth();
+                const snap = await db.collection('clubs').doc(s.id).get();
+                if (snap.exists) enterClub(s.id, s.name); else localStorage.removeItem('jokgu_active_club');
+            } catch (err) { console.warn('자동 접속 실패 (오프라인일 수 있음)', err); }
+        }
+
+        function unlockApp() {
+            document.getElementById('sec-1').classList.add('hidden');
+            document.getElementById('appBody').classList.remove('hidden');
+            document.getElementById('bottomNav').classList.remove('hidden');
+            document.getElementById('loggedHeaderInfo').classList.remove('hidden');
+            document.getElementById('logoutBtn').classList.remove('hidden');
+            document.getElementById('currentClubDisplay').innerText = currentClub;
+            document.getElementById('pwChangeArea').classList.remove('hidden');
+
+            switchTab(2); // default to Tab 2
+        }
+
+        function logout() {
+            localStorage.removeItem('jokgu_active_club');
+            location.reload();
+        }
+
+        function changePassword() {
+            const newPw = document.getElementById('newPwInput').value.trim();
+            const pwRegex = /^(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])(?=.*\d).{5}$/;
+            if (!pwRegex.test(newPw)) {
+                alert('새 비밀번호는 숫자 4자리 + 특수문자 1개 조합이어야 합니다.');
+                return;
+            }
+            const storedClubKey = `jokgu_club_${currentClub}`;
+            const clubData = JSON.parse(localStorage.getItem(storedClubKey));
+            clubData.password = newPw;
+            localStorage.setItem(storedClubKey, JSON.stringify(clubData));
+            alert('비밀번호가 성공적으로 변경되었습니다.');
+            document.getElementById('newPwInput').value = '';
+        }
+
+        // --- LOCAL STORAGE DATA LOAD/SAVE ---
+        function saveClubData() {
+            if (!clubRef || !syncReady) return;
+            Object.keys(SEC).forEach(k => {
+                const json = JSON.stringify(SEC[k][0]());
+                if (json === lastSynced[k]) return;
+                if (json.length > 950000) { alert(`'${k}' 데이터가 너무 커서 서버에 저장할 수 없습니다. 사진/자료를 줄여주세요.`); return; }
+                lastSynced[k] = json;
+                clubRef.collection('data').doc(k).set({ json, updatedAt: Date.now() }).catch(err => {
+                    console.error(err); lastSynced[k] = null;
+                    alert('서버 저장 실패: ' + err.message);
+                });
+            });
+        }
+
+        function loadClubData() {
+            const d = DEFAULTS();
+            players = d.players; attendance = d.attendance; historyDocs = d.historyDocs; execBoard = d.execBoard;
+            formationSets = d.formationSets; scores = d.scores; polls = d.polls; notices = d.notices; videos = d.videos;
+        }
+
+        // --- TAB NAVIGATION ---
+        function switchTab(tabNum) {
+            activeTab = tabNum;
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            const targetSec = document.getElementById(`sec-${tabNum}`);
+            if (targetSec) targetSec.classList.remove('hidden');
+
+            // Highlight top & bottom navs
+            for (let i = 2; i <= 12; i++) {
+                const btn = document.getElementById(`tabBtn-${i}`);
+                if (btn) {
+                    if (i === tabNum) {
+                        btn.className = 'px-3 py-2 rounded-xl shrink-0 transition bg-jokgu-600 text-white font-bold shadow';
+                    } else {
+                        btn.className = 'px-3 py-2 rounded-xl shrink-0 transition bg-slate-100 text-slate-600 hover:bg-slate-200';
+                    }
+                }
+            }
+
+            const activeBtn = document.getElementById(`tabBtn-${tabNum}`);
+            if (activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+
+            // Render specific views on switch
+            if (tabNum === 2) renderHistoryList();
+            if (tabNum === 3) renderExecList();
+            if (tabNum === 4) renderPlayerList();
+            if (tabNum === 5) renderAttendanceList();
+            if (tabNum === 6) renderSquadUI();
+            if (tabNum === 7) generateLeagueMatches();
+            if (tabNum === 8) renderScoreHistory();
+            if (tabNum === 9) renderPolls();
+            if (tabNum === 10) renderNotices();
+            if (tabNum === 12) renderVideos();
+        }
+
+        // --- SECTION 2: 동우회 현역 / 회칙 ---
+        function renderHistoryList() {
+            const container = document.getElementById('historyList');
+            if (historyDocs.length === 0) {
+                container.innerHTML = `<p class="text-center text-xs text-slate-400 py-4">등록된 현역 정보가 없습니다.</p>`;
+                return;
+            }
+            container.innerHTML = historyDocs.map((item, idx) => `
+                <div class="border rounded-xl p-3 bg-slate-50 space-y-1 text-xs">
+                    <div class="flex justify-between items-center text-slate-500 border-b pb-1">
+                        <span>취임/저장일: <b>${item.date}</b></span>
+                        <div class="space-x-1">
+                            <button onclick="deleteHistory(${idx})" class="text-red-500 font-bold">삭제</button>
+                        </div>
+                    </div>
+                    <div class="font-bold text-slate-800 text-sm mt-1">단장 성명: ${item.president}</div>
+                    <div class="text-slate-600 bg-white p-2 rounded border mt-1 whitespace-pre-line">${item.rules}</div>
+                    ${item.image ? `<img src="${item.image}" class="mt-2 rounded max-h-40 object-cover w-full">` : ''}
+                </div>
+            `).join('');
+        }
+
+        function openHistoryModal() {
+            document.getElementById('modalTitle').innerText = '동우회 현역/회칙 등록';
+            document.getElementById('modalBody').innerHTML = `
+                <div>
+                    <label class="block mb-1 font-bold">취임 날짜</label>
+                    <input type="date" id="histDate" class="w-full border p-2 rounded" value="${getTodayStr()}">
+                </div>
+                <div>
+                    <label class="block mb-1 font-bold">단장 성명</label>
+                    <input type="text" id="histPres" class="w-full border p-2 rounded" placeholder="단장 성명 입력">
+                </div>
+                <div>
+                    <label class="block mb-1 font-bold">동우회 회칙 (문서 내용)</label>
+                    <textarea id="histRules" rows="4" class="w-full border p-2 rounded" placeholder="회칙 내용을 입력하세요"></textarea>
+                </div>
+                <div>
+                    <label class="block mb-1 font-bold">회칙 이미지 첨부</label>
+                    <input type="file" id="histImg" accept="image/*" class="w-full text-xs">
+                </div>
+                <button onclick="saveHistory()" class="w-full bg-jokgu-600 text-white font-bold py-2 rounded-xl mt-2">저장하기</button>
+            `;
+            openModal();
+        }
+
+        async function saveHistory() {
+            const date = document.getElementById('histDate').value;
+            const president = document.getElementById('histPres').value;
+            const rules = document.getElementById('histRules').value;
+            const file = document.getElementById('histImg').files[0];
+            const newDoc = { date, president, rules, image: '' };
+            try {
+                if (file) {
+                    document.getElementById('modalBody').innerHTML = '<p class="text-center py-6 font-bold">이미지 업로드 중입니다...</p>';
+                    const blob = await compressImage(file, 1200, 1200, 0.75);
+                    newDoc.image = await uploadBlob(`clubs/${clubId}/rules/${Date.now()}.jpg`, blob);
+                }
+                historyDocs.push(newDoc);
+                saveClubData();
+                renderHistoryList();
+                closeModal();
+            } catch (err) { console.error(err); alert('저장 실패: ' + (err.message || err)); closeModal(); }
+        }
+
+        function deleteHistory(idx) {
+            if (confirm('삭제하시겠습니까?')) {
+                historyDocs.splice(idx, 1);
+                saveClubData();
+                renderHistoryList();
+            }
+        }
+
+        // --- SECTION 3: 동우회 집행부 ---
+        function renderExecList() {
+            const container = document.getElementById('execList');
+            if (execBoard.length === 0) {
+                container.innerHTML = `<p class="text-center text-xs text-slate-400 py-4">등록된 집행부 내역이 없습니다.</p>`;
+                return;
+            }
+            container.innerHTML = execBoard.map((item, idx) => `
+                <div class="border rounded-xl p-3 bg-slate-50 space-y-1 text-xs">
+                    <div class="flex justify-between items-center text-slate-500 border-b pb-1">
+                        <span class="font-bold text-jokgu-700">기록일: ${item.date}</span>
+                        <button onclick="deleteExec(${idx})" class="text-red-500 font-bold">삭제</button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1.5 pt-1 text-slate-700">
+                        <div><b>단장:</b> ${item.president || '-'}</div>
+                        <div><b>총무:</b> ${item.manager || '-'}</div>
+                        <div><b>부총무:</b> ${item.subManager || '-'}</div>
+                        <div><b>감독:</b> ${item.headCoach || '-'}</div>
+                        <div><b>코치1:</b> ${item.c1 || '-'}</div>
+                        <div><b>코치2:</b> ${item.c2 || '-'}</div>
+                        <div><b>코치3:</b> ${item.c3 || '-'}</div>
+                        <div><b>감사:</b> ${item.auditor || '-'}</div>
+                        <div><b>고문:</b> ${item.advisor || '-'}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function openExecModal() {
+            document.getElementById('modalTitle').innerText = '집행부 임원 구성 등록';
+            document.getElementById('modalBody').innerHTML = `
+                <div><label class="block font-bold">날짜</label><input type="date" id="exDate" class="w-full border p-1.5 rounded" value="${getTodayStr()}"></div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div><label class="block font-bold">단장</label><input type="text" id="exPres" class="w-full border p-1.5 rounded"></div>
+                    <div><label class="block font-bold">총무</label><input type="text" id="exMgr" class="w-full border p-1.5 rounded"></div>
+                    <div><label class="block font-bold">부총무</label><input type="text" id="exSub" class="w-full border p-1.5 rounded"></div>
+                    <div><label class="block font-bold">감독</label><input type="text" id="exHead" class="w-full border p-1.5 rounded"></div>
+                    <div><label class="block font-bold">코치1</label><input type="text" id="exC1" class="w-full border p-1.5 rounded"></div>
+                    <div><label class="block font-bold">코치2</label><input type="text" id="exC2" class="w-full border p-1.5 rounded"></div>
+                    <div><label class="block font-bold">코치3</label><input type="text" id="exC3" class="w-full border p-1.5 rounded"></div>
+                    <div><label class="block font-bold">감사</label><input type="text" id="exAud" class="w-full border p-1.5 rounded"></div>
+                    <div class="col-span-2"><label class="block font-bold">고문</label><input type="text" id="exAdv" class="w-full border p-1.5 rounded"></div>
+                </div>
+                <button onclick="saveExec()" class="w-full bg-jokgu-600 text-white font-bold py-2 rounded-xl mt-2">저장하기</button>
+            `;
+            openModal();
+        }
+
+        function saveExec() {
+            const newExec = {
+                date: document.getElementById('exDate').value,
+                president: document.getElementById('exPres').value,
+                manager: document.getElementById('exMgr').value,
+                subManager: document.getElementById('exSub').value,
+                headCoach: document.getElementById('exHead').value,
+                c1: document.getElementById('exC1').value,
+                c2: document.getElementById('exC2').value,
+                c3: document.getElementById('exC3').value,
+                auditor: document.getElementById('exAud').value,
+                advisor: document.getElementById('exAdv').value,
+            };
+            execBoard.push(newExec);
+            saveClubData();
+            renderExecList();
+            closeModal();
+        }
+
+        function deleteExec(idx) {
+            if (confirm('삭제하시겠습니까?')) {
+                execBoard.splice(idx, 1);
+                saveClubData();
+                renderExecList();
+            }
+        }
+
+        // --- SECTION 4: 선수 등록 ---
+        function renderPlayerList() {
+            const nameSearch = document.getElementById('playerSearchName').value.trim().toLowerCase();
+            const ageSearch = document.getElementById('playerSearchAge').value;
+            const container = document.getElementById('playerList');
+
+            const filtered = players.filter(p => {
+                const matchName = p.name.toLowerCase().includes(nameSearch);
+                const matchAge = ageSearch ? p.age === ageSearch : true;
+                return matchName && matchAge;
+            });
+
+            if (filtered.length === 0) {
+                container.innerHTML = `<p class="text-center text-xs text-slate-400 py-4">검색된 선수가 없습니다.</p>`;
+                return;
+            }
+
+            container.innerHTML = filtered.map((p, idx) => `
+                <div class="border rounded-xl p-3 bg-white shadow-sm flex items-center gap-3 text-xs">
+                    <div class="w-12 h-12 rounded-full bg-slate-200 overflow-hidden shrink-0 flex items-center justify-center font-bold text-slate-400">
+                        ${p.photo ? `<img src="${p.photo}" class="w-full h-full object-cover">` : `<i class="fa-solid fa-user text-xl"></i>`}
+                    </div>
+                    <div class="flex-1 space-y-0.5">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-sm text-slate-800">${p.name}</span>
+                            <span class="bg-jokgu-100 text-jokgu-700 font-bold px-1.5 py-0.5 rounded text-[10px]">No.${p.number}</span>
+                            <span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px]">${p.type}</span>
+                        </div>
+                        <div class="text-slate-500">생년월일: ${p.birth} (${p.age})</div>
+                        <div class="text-slate-500">포지션: <b class="text-slate-700">${p.position}</b> | 📞 ${p.phone}</div>
+                    </div>
+                    <button onclick="deletePlayer('${p.id}')" class="text-slate-400 hover:text-red-500 p-1"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            `).join('');
+        }
+
+        function openPlayerModal() {
+            const autoRegNum = 'REG-' + Math.floor(1000 + Math.random() * 9000);
+            document.getElementById('modalTitle').innerText = '선수 신규 등록';
+            document.getElementById('modalBody').innerHTML = `
+                <div class="text-xs text-slate-500 font-bold">등록번호: ${autoRegNum}</div>
+                <div><label class="block font-bold">선수 성명</label><input type="text" id="pName" class="w-full border p-1.5 rounded" required></div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-bold">구분</label>
+                        <select id="pType" class="w-full border p-1.5 rounded">
+                            <option value="회원">회원</option>
+                            <option value="외부인">외부인</option>
+                        </select>
+                    </div>
+                    <div><label class="block font-bold">등번호</label><input type="number" id="pNum" class="w-full border p-1.5 rounded"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div><label class="block font-bold">생년월일</label><input type="date" id="pBirth" class="w-full border p-1.5 rounded"></div>
+                    <div>
+                        <label class="block font-bold">연령대</label>
+                        <select id="pAge" class="w-full border p-1.5 rounded">
+                            <option value="20대">20대</option>
+                            <option value="30대">30대</option>
+                            <option value="40대">40대</option>
+                            <option value="50대">50대</option>
+                            <option value="60대">60대</option>
+                            <option value="70대">70대</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block font-bold">족구 포지션</label>
+                    <select id="pPos" class="w-full border p-1.5 rounded">
+                        <option value="공격">공격 (좌/우공격)</option>
+                        <option value="세터">세터</option>
+                        <option value="좌수비">좌수비</option>
+                        <option value="우수비">우수비</option>
+                    </select>
+                </div>
+                <div><label class="block font-bold">핸드폰</label><input type="tel" id="pPhone" class="w-full border p-1.5 rounded" placeholder="010-0000-0000"></div>
+                <div><label class="block font-bold">주소</label><input type="text" id="pAddr" class="w-full border p-1.5 rounded"></div>
+                <div><label class="block font-bold">선수 얼굴 사진 Upload</label><input type="file" id="pPhoto" accept="image/*" class="w-full text-xs"></div>
+                <button onclick="savePlayer('${autoRegNum}')" class="w-full bg-jokgu-600 text-white font-bold py-2 rounded-xl mt-2">선수 등록 완료</button>
+            `;
+            openModal();
+        }
+
+        async function savePlayer(regNum) {
+            const name = document.getElementById('pName').value.trim();
+            if (!name) { alert('선수 성명을 입력하세요.'); return; }
+            const newPlayer = {
+                id: regNum,
+                name,
+                type: document.getElementById('pType').value,
+                number: document.getElementById('pNum').value || '0',
+                birth: document.getElementById('pBirth').value || '2000-01-01',
+                age: document.getElementById('pAge').value,
+                position: document.getElementById('pPos').value,
+                phone: document.getElementById('pPhone').value,
+                address: document.getElementById('pAddr').value,
+                photo: ''
+            };
+            const file = document.getElementById('pPhoto').files[0];
+            if (file) {
+                try { newPlayer.photo = await blobToDataURL(await compressImage(file, 160, 160, 0.6)); }
+                catch (e) { alert('사진 처리에 실패했습니다.'); return; }
+            }
+            players.push(newPlayer);
+            saveClubData();
+            renderPlayerList();
+            closeModal();
+        }
+
+        function deletePlayer(id) {
+            if (confirm('해당 선수를 삭제하시겠습니까?')) {
+                players = players.filter(p => p.id !== id);
+                saveClubData();
+                renderPlayerList();
+            }
+        }
+
+        // --- SECTION 5: 출석체크 ---
+        function renderAttendanceList() {
+            const search = document.getElementById('attendSearchInput').value.trim().toLowerCase();
+            const container = document.getElementById('attendList');
+            const today = getTodayStr();
+
+            const filtered = players.filter(p => p.name.toLowerCase().includes(search));
+
+            container.innerHTML = filtered.map(p => {
+                const attRec = attendance.find(a => a.playerId === p.id && a.date === today && !a.clockOut);
+                const isPresent = !!attRec;
+
+                return `
+                    <div class="flex items-center justify-between p-2 rounded-xl border ${isPresent ? 'bg-emerald-50 border-emerald-300' : 'bg-slate-50'} text-xs">
+                        <div class="flex items-center gap-2">
+                            <div class="w-8 h-8 rounded-full bg-slate-300 overflow-hidden flex-shrink-0">
+                                ${p.photo ? `<img src="${p.photo}" class="w-full h-full object-cover">` : ''}
+                            </div>
+                            <div>
+                                <div class="font-bold text-slate-800">${p.name} (${p.age})</div>
+                                <div class="text-[10px] text-slate-400">${p.birth}</div>
+                            </div>
+                        </div>
+                        <div>
+                            ${!isPresent ? `
+                                <button onclick="clockIn('${p.id}')" class="bg-jokgu-600 text-white px-3 py-1 rounded-lg font-bold">출석체크</button>
+                            ` : `
+                                <button onclick="clockOut('${p.id}')" class="bg-amber-600 text-white px-3 py-1 rounded-lg font-bold">퇴근체크</button>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            renderAttendanceHistory();
+        }
+
+        async function clockIn(playerId) {
+            const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+            const today = getTodayStr();
+            await mutate('attendance', cur => {
+                if (cur.some(a => a.playerId === playerId && a.date === today && !a.clockOut)) return false;
+                cur.push({ id: 'ATT-' + Date.now() + Math.random().toString(36).slice(2, 5), playerId, date: today, clockIn: timeStr, clockOut: '' });
+            });
+            renderAttendanceList();
+        }
+
+        async function clockOut(playerId) {
+            const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+            const today = getTodayStr();
+            await mutate('attendance', cur => {
+                const rec = cur.find(a => a.playerId === playerId && a.date === today && !a.clockOut);
+                if (!rec) return false;
+                rec.clockOut = timeStr;
+            });
+            renderAttendanceList();
+        }
+
+        function renderAttendanceHistory() {
+            const container = document.getElementById('attendHistoryList');
+            const today = getTodayStr();
+            const todayLogs = attendance.filter(a => a.date === today);
+
+            if (todayLogs.length === 0) {
+                container.innerHTML = `<p class="text-slate-400 text-center py-2">오늘 출석 기록이 없습니다.</p>`;
+                return;
+            }
+
+            container.innerHTML = todayLogs.map(a => {
+                const player = players.find(p => p.id === a.playerId) || { name: '알수없음', photo: '' };
+                return `
+                    <div class="flex items-center justify-between bg-slate-50 p-2 rounded border">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-slate-800">${player.name}</span>
+                            <span class="text-[10px] text-emerald-600 font-bold">입장: ${a.clockIn}</span>
+                            ${a.clockOut ? `<span class="text-[10px] text-amber-600 font-bold">퇴장: ${a.clockOut}</span>` : '<span class="text-[10px] bg-emerald-100 text-emerald-800 px-1 rounded">운동중</span>'}
+                        </div>
+                        <button onclick="deleteAttendance('${a.id}')" class="text-red-400 font-bold text-[10px]">삭제</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function deleteAttendance(attId) {
+            await mutate('attendance', cur => {
+                const i = cur.findIndex(a => a.id === attId);
+                if (i < 0) return false;
+                cur.splice(i, 1);
+            });
+            renderAttendanceList();
+        }
+
+        // --- SECTION 6: 선수구성 (기본버전 방식, localStorage 저장) ---
+        const TEAM_LABELS = ['A팀', 'B팀', 'C팀', 'D팀', 'E팀', 'F팀'];
+        const SQUAD_POS = { '1': '공격수', '2': '세터', '3': '수비수', '4': '레프트', '5': '후보' };
+        const sqEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+        function sqAvatar(name, size) {
+            const p = players.find(x => x.name === name);
+            return p && p.photo
+                ? `<img src="${p.photo}" class="${size} rounded-full object-cover">`
+                : `<span class="${size} rounded-full bg-slate-200 text-slate-400 flex items-center justify-center text-[9px]"><i class="fa-solid fa-user"></i></span>`;
+        }
+
+        // 세트별 팀 데이터 { 'A팀': [{name, position}] } (예전 형식(문자열)은 자동 변환)
+        function getSquadTeams(setNum) {
+            if (!formationSets[setNum - 1]) formationSets[setNum - 1] = { date: '', teams: {} };
+            const set = formationSets[setNum - 1];
+            if (!set.teams) set.teams = {};
+            Object.keys(set.teams).forEach(t => {
+                if (!Array.isArray(set.teams[t])) {
+                    set.teams[t] = String(set.teams[t] || '').split(/[,\s]+/).filter(Boolean).map(n => ({ name: n, position: '후보' }));
+                }
+            });
+            return set.teams;
+        }
+
+        function renderSquadUI() {
+            const setNum = parseInt(document.getElementById('squadSetSelect').value);
+            const teamCount = parseInt(document.getElementById('squadTeamCount').value);
+
+            // 출석 선수 풀 (오늘 출석 + 퇴근 안 한 선수)
+            const today = getTodayStr();
+            const activeIds = attendance.filter(a => a.date === today && !a.clockOut).map(a => a.playerId);
+            const pool = players.filter(p => activeIds.includes(p.id));
+            document.getElementById('squadPool').innerHTML = pool.length === 0
+                ? '<span class="text-xs text-slate-400">출석체크 완료된 선수가 없습니다. (퇴근 선수 제외)</span>'
+                : pool.map(p => `
+                    <button onclick="assignPlayerToSquad('${p.id}')" class="bg-white hover:bg-emerald-100 border border-emerald-300 px-2 py-1 rounded-lg text-xs flex items-center gap-1 shadow-sm">
+                        ${sqAvatar(p.name, 'w-6 h-6')}<span class="font-bold text-emerald-900">${sqEsc(p.name)}</span>
+                    </button>`).join('');
+
+            // 팀별 구성
+            const teams = getSquadTeams(setNum);
+            document.getElementById('squadTeamsContainer').innerHTML = TEAM_LABELS.slice(0, teamCount).map(tName => {
+                const members = teams[tName] || [];
+                return `
+                <div class="bg-slate-50 border p-2.5 rounded-xl space-y-1.5">
+                    <div class="flex justify-between items-center font-bold text-xs text-slate-800 border-b pb-1">
+                        <span>${tName} (총 ${members.length}명)</span>
+                        <span class="text-[10px] text-slate-500">터치하면 음성 출력</span>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5 min-h-[35px]">
+                        ${members.length === 0 ? '<span class="text-[11px] text-slate-400">위 선수를 터치하여 팀에 배치하세요.</span>' : ''}
+                        ${members.map((m, i) => `
+                            <div onclick="speakSquadMember('${tName}', ${i})" class="bg-white border px-2.5 py-1 rounded shadow-sm text-xs flex items-center gap-1.5 cursor-pointer hover:bg-amber-50">
+                                ${sqAvatar(m.name, 'w-5 h-5')}
+                                <span class="font-bold">${sqEsc(m.name)}</span>
+                                <span class="text-[10px] bg-blue-100 text-blue-800 px-1 rounded font-semibold">${sqEsc(m.position)}</span>
+                                <button onclick="event.stopPropagation(); removeSquadMember('${tName}', ${i})" class="text-red-500 font-bold ml-1 text-sm">×</button>
+                            </div>`).join('')}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function assignPlayerToSquad(playerId) {
+            const p = players.find(x => x.id === playerId);
+            if (!p) return;
+            const setNum = parseInt(document.getElementById('squadSetSelect').value);
+            const teamCount = parseInt(document.getElementById('squadTeamCount').value);
+            const teamNames = TEAM_LABELS.slice(0, teamCount);
+
+            const teamChoice = prompt(`[${p.name}] 선수를 배정할 팀을 입력하세요 (${teamNames.join(', ')} 중):`, 'A팀');
+            if (!teamChoice) return;
+            let tName = teamChoice.trim().toUpperCase();
+            if (/^[A-F]$/.test(tName)) tName += '팀';
+            if (!teamNames.includes(tName)) { alert('올바른 팀명을 입력해주세요. 예: A팀'); return; }
+
+            const posChoice = prompt('포지션 번호를 입력하세요:\n1: 공격수\n2: 세터\n3: 수비수\n4: 레프트\n5: 후보', '1');
+            if (posChoice === null) return;
+            const position = SQUAD_POS[posChoice.trim()] || '공격수';
+
+            const teams = getSquadTeams(setNum);
+            if (!teams[tName]) teams[tName] = [];
+            if (teams[tName].some(m => m.name === p.name)) { alert('이미 이 팀에 배정된 선수입니다.'); return; }
+            teams[tName].push({ name: p.name, position });
+            saveClubData();
+            renderSquadUI();
+        }
+
+        function removeSquadMember(tName, idx) {
+            const setNum = parseInt(document.getElementById('squadSetSelect').value);
+            const teams = getSquadTeams(setNum);
+            if (!teams[tName] || !teams[tName][idx]) return;
+            teams[tName].splice(idx, 1);
+            saveClubData();
+            renderSquadUI();
+        }
+
+        function saveSquadCheck() {
+            saveClubData();
+            alert('현재 세트의 선수구성이 저장되어 있습니다.');
+        }
+
+        function speakSquadMember(tName, idx) {
+            const setNum = parseInt(document.getElementById('squadSetSelect').value);
+            const m = (getSquadTeams(setNum)[tName] || [])[idx];
+            if (m) speakText(`${tName}, 선수 ${m.name}, 포지션 ${m.position}`);
+        }
+
+        function speakAllSquad() {
+            const setNum = parseInt(document.getElementById('squadSetSelect').value);
+            const teams = getSquadTeams(setNum);
+            let fullText = `${setNum}세트 선수 구성 전체 안내입니다. `;
+            const entries = Object.entries(teams).sort((a, b) => a[0].localeCompare(b[0]));
+            if (entries.length === 0) fullText += '배치된 선수가 없습니다.';
+            entries.forEach(([tName, members]) => {
+                fullText += `${tName}: `;
+                fullText += members.length === 0 ? '선수 없음. ' : members.map(m => `${m.name} ${m.position}`).join(', ') + '. ';
+            });
+            speakText(fullText);
+        }
+
+        // --- SECTION 7: 게임팀 구성 (League Presets & Audio) ---
+        const leaguePresets = {
+            3: [
+                { match: 'A팀 vs B팀', ref: 'C팀 심판' },
+                { match: 'B팀 vs C팀', ref: 'A팀 심판' },
+                { match: 'C팀 vs A팀', ref: 'B팀 심판' }
+            ],
+            4: [
+                { match: 'A팀 vs B팀', ref: 'C팀 심판' },
+                { match: 'C팀 vs D팀', ref: 'B팀 심판' },
+                { match: 'A팀 vs C팀', ref: 'D팀 심판' },
+                { match: 'B팀 vs D팀', ref: 'A팀 심판' },
+                { match: 'C팀 vs B팀', ref: 'D팀 심판' },
+                { match: 'D팀 vs A팀', ref: 'C팀 심판' }
+            ],
+            5: [
+                { match: 'A팀 vs B팀', ref: 'E팀 심판' },
+                { match: 'C팀 vs D팀', ref: 'E팀 심판' },
+                { match: 'C팀 vs A팀', ref: 'D팀 심판' },
+                { match: 'B팀 vs E팀', ref: 'D팀 심판' },
+                { match: 'B팀 vs D팀', ref: 'C팀 심판' },
+                { match: 'E팀 vs A팀', ref: 'C팀 심판' },
+                { match: 'C팀 vs E팀', ref: 'B팀 심판' },
+                { match: 'A팀 vs D팀', ref: 'B팀 심판' },
+                { match: 'D팀 vs E팀', ref: 'A팀 심판' },
+                { match: 'B팀 vs C팀', ref: 'A팀 심판' }
+            ],
+            6: [
+                { match: 'C팀 vs E팀', ref: 'B팀 심판' },
+                { match: 'A팀 vs D팀', ref: 'B팀 심판' },
+                { match: 'A팀 vs C팀', ref: 'D팀 심판' },
+                { match: 'B팀 vs F팀', ref: 'D팀 심판' },
+                { match: 'D팀 vs F팀', ref: 'C팀 심판' },
+                { match: 'B팀 vs E팀', ref: 'C팀 심판' },
+                { match: 'A팀 vs E팀', ref: 'F팀 심판' },
+                { match: 'C팀 vs D팀', ref: 'F팀 심판' },
+                { match: 'A팀 vs B팀', ref: 'E팀 심판' },
+                { match: 'C팀 vs F팀', ref: 'E팀 심판' },
+                { match: 'B팀 vs D팀', ref: 'A팀 심판' },
+                { match: 'E팀 vs F팀', ref: 'A팀 심판' },
+                { match: 'B팀 vs C팀', ref: 'A팀 심판' },
+                { match: 'D팀 vs E팀', ref: 'A팀 심판' },
+                { match: 'A팀 vs F팀', ref: 'B팀 심판' },
+                { match: 'C팀 vs E팀', ref: 'B팀 심판' }
+            ]
+        };
+
+        function generateLeagueMatches() {
+            const count = document.getElementById('matchTeamCount').value;
+            const matches = leaguePresets[count] || [];
+            const container = document.getElementById('leagueMatchList');
+            const defaultCourt = document.getElementById('matchCourtSelect').value || '1코트';
+
+            container.innerHTML = matches.map((m, idx) => `
+                <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs space-y-2 shadow-sm">
+                    <div class="flex items-center justify-between gap-1 border-b pb-1.5">
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="chk-match-${idx}" class="w-4 h-4 text-jokgu-600 rounded cursor-pointer">
+                            <span class="font-bold text-slate-400">#${idx + 1}</span>
+                            <button onclick="showTeamPopup('${m.match}', ${idx})" class="font-bold text-sm text-slate-800 hover:text-jokgu-600 underline">
+                                ${m.match}
+                            </button>
+                            <span class="text-slate-500 text-[11px]">(${m.ref})</span>
+                        </div>
+                        <!-- 별도 개별 코트 선택 드롭다운 -->
+                        <select id="match-court-${idx}" class="border border-amber-300 bg-amber-50 text-amber-800 font-bold px-2 py-1 rounded-lg text-xs outline-none focus:ring-1 focus:ring-amber-500">
+                            <option value="1코트" ${defaultCourt === '1코트' ? 'selected' : ''}>1코트</option>
+                            <option value="2코트" ${defaultCourt === '2코트' ? 'selected' : ''}>2코트</option>
+                            <option value="3코트" ${defaultCourt === '3코트' ? 'selected' : ''}>3코트</option>
+                            <option value="4코트" ${defaultCourt === '4코트' ? 'selected' : ''}>4코트</option>
+                        </select>
+                    </div>
+
+                    <div class="flex justify-end items-center gap-2 text-[11px]">
+                        <button onclick="speakMatchInfoByIndex(${idx}, '${m.match}', '${m.ref}')" class="bg-jokgu-600 hover:bg-jokgu-700 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 shadow-sm">
+                            <i class="fa-solid fa-volume-high text-xs"></i> 코트/대진 음성 출력
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function applyAllCourts() {
+            const selectedCourt = document.getElementById('matchCourtSelect').value;
+            const selects = document.querySelectorAll('[id^="match-court-"]');
+            selects.forEach(sel => {
+                sel.value = selectedCourt;
+            });
+        }
+
+        function showTeamPopup(matchTitle, idx) {
+            const courtElem = document.getElementById(`match-court-${idx}`);
+            const court = courtElem ? courtElem.value : '1코트';
+
+            document.getElementById('modalTitle').innerText = '🏆 게임팀 대진 정보';
+            document.getElementById('modalBody').innerHTML = `
+                <div class="text-center space-y-3 p-2">
+                    <div class="inline-block bg-amber-100 text-amber-900 font-bold text-xs px-3 py-1 rounded-full border border-amber-300">
+                        ${court} 배정
+                    </div>
+                    <div class="text-base font-black text-jokgu-800">${matchTitle}</div>
+                    <p class="text-xs text-slate-500 bg-slate-50 p-2.5 rounded-xl border">
+                        출석한 선수 명단과 연계된 대진 정보입니다.<br>아래 버튼을 누르면 코트 및 대진명이 음성으로 출력됩니다.
+                    </p>
+                    <button onclick="speakText('${court}, ${matchTitle} 대진 경기입니다.')" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow">
+                        <i class="fa-solid fa-volume-high"></i> 팀명 및 선수 음성 출력
+                    </button>
+                </div>
+            `;
+            openModal();
+        }
+
+        function speakMatchInfoByIndex(idx, match, ref) {
+            const courtElem = document.getElementById(`match-court-${idx}`);
+            const court = courtElem ? courtElem.value : '1코트';
+            const text = `${court}, ${match}, ${ref}입니다.`;
+            speakText(text);
+        }
+
+        function speakText(text) {
+            if (!('speechSynthesis' in window)) {
+                alert('이 브라우저는 음성 출력을 지원하지 않습니다.');
+                return;
+            }
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'ko-KR';
+            utterance.rate = 0.9;
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // --- SECTION 8: 점수판 & 호루라기 (Web Audio API) ---
+        function initScoreOptions() {
+            const select = document.getElementById('scoreSetSelect');
+            if (!select) return;
+            select.innerHTML = '';
+            for (let i = 1; i <= 20; i++) {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.innerText = `세트 ${i}`;
+                select.appendChild(opt);
+            }
+            loadScoreSet();
+        }
+
+        function loadScoreSet() {
+            const setNum = document.getElementById('scoreSetSelect').value;
+            const setData = scores[setNum] || { teamA: 'A팀', teamB: 'B팀', scoreA: 0, scoreB: 0 };
+            document.getElementById('scoreTeamA').value = setData.teamA;
+            document.getElementById('scoreTeamB').value = setData.teamB;
+            document.getElementById('scoreA').innerText = setData.scoreA;
+            document.getElementById('scoreB').innerText = setData.scoreB;
+        }
+
+        function changeScore(team, val) {
+            const elem = document.getElementById(`score${team}`);
+            let cur = parseInt(elem.innerText) || 0;
+            cur = Math.max(0, cur + val);
+            elem.innerText = cur;
+        }
+
+        function saveCurrentSetScore() {
+            const setNum = document.getElementById('scoreSetSelect').value;
+            const teamA = document.getElementById('scoreTeamA').value || 'A팀';
+            const teamB = document.getElementById('scoreTeamB').value || 'B팀';
+            const scoreA = parseInt(document.getElementById('scoreA').innerText) || 0;
+            const scoreB = parseInt(document.getElementById('scoreB').innerText) || 0;
+
+            scores[setNum] = {
+                teamA,
+                teamB,
+                scoreA,
+                scoreB,
+                date: getTodayStr()
+            };
+            saveClubData();
+            renderScoreHistory();
+            alert(`세트 ${setNum} 점수가 저장되었습니다.`);
+        }
+
+        function renderScoreHistory() {
+            const container = document.getElementById('scoreHistoryList');
+            if (!container) return;
+            const keys = Object.keys(scores).sort((a, b) => Number(a) - Number(b));
+            if (keys.length === 0) {
+                container.innerHTML = `<p class="text-slate-400 text-center py-2">저장된 세트 점수가 없습니다.</p>`;
+                return;
+            }
+
+            container.innerHTML = keys.map(k => {
+                const item = scores[k];
+                return `
+                    <div class="flex justify-between items-center bg-slate-50 p-2 rounded border">
+                        <span class="font-bold text-jokgu-700">세트 ${k} (${item.date || '-'})</span>
+                        <span class="font-bold text-slate-800">${item.teamA} ${item.scoreA} : ${item.scoreB} ${item.teamB}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function startMatchTimer() {
+            if (matchTimerInterval) return;
+            matchTimerInterval = setInterval(() => {
+                matchTimerSeconds++;
+                const mins = String(Math.floor(matchTimerSeconds / 60)).padStart(2, '0');
+                const secs = String(matchTimerSeconds % 60).padStart(2, '0');
+                document.getElementById('matchTimerDisplay').innerText = `${mins}:${secs}`;
+            }, 1000);
+        }
+
+        function pauseMatchTimer() {
+            clearInterval(matchTimerInterval);
+            matchTimerInterval = null;
+        }
+
+        function resetMatchTimer() {
+            pauseMatchTimer();
+            matchTimerSeconds = 0;
+            document.getElementById('matchTimerDisplay').innerText = '00:00';
+        }
+
+        function playWhistleSound() {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                const ctx = new AudioContext();
+
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(2800, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(3200, ctx.currentTime + 0.1);
+                osc.frequency.exponentialRampToValueAtTime(2800, ctx.currentTime + 0.3);
+
+                gain.gain.setValueAtTime(0, ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
+
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                osc.start();
+                osc.stop(ctx.currentTime + 1.2);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // --- SECTION 9, 10, 12 MODALS & HELPERS ---
+        function normPoll(p) {
+            if (!p.options) {
+                p.options = [
+                    { text: p.opt1 || '찬성', voters: [], legacy: p.votes1 || 0 },
+                    { text: p.opt2 || '반대', voters: [], legacy: p.votes2 || 0 }
+                ];
+            }
+            p.options.forEach(o => { if (!o.voters) o.voters = []; });
+            return p;
+        }
+        const pollOpen = new Set();   // 열어둔 투표자 목록 (다시 그려도 유지)
+        function togglePollOpen(key, isOpen) { isOpen ? pollOpen.add(key) : pollOpen.delete(key); }
+
+        function openPollModal() {
+            document.getElementById('modalTitle').innerText = '투표 생성';
+            document.getElementById('modalBody').innerHTML = `
+                <div><label class="block font-bold mb-1">투표 안건 제목</label><input type="text" id="pollTitle" class="w-full border p-1.5 rounded" placeholder="예: 이번 주 모임 장소"></div>
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="font-bold">투표 항목</label>
+                        <button type="button" onclick="addPollOption()" class="bg-slate-800 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg">+ 항목 추가</button>
+                    </div>
+                    <div id="pollOptWrap" class="space-y-1.5 max-h-48 overflow-y-auto"></div>
+                </div>
+                <button onclick="savePoll()" class="w-full bg-jokgu-600 text-white font-bold py-2 rounded-xl mt-2">투표 생성</button>
+            `;
+            addPollOption('찬성');
+            addPollOption('반대');
+            openModal();
+        }
+
+        function addPollOption(val) {
+            const wrap = document.getElementById('pollOptWrap');
+            const row = document.createElement('div');
+            row.className = 'flex items-center gap-1.5';
+            row.innerHTML = `<input type="text" class="poll-opt-input flex-1 border p-1.5 rounded" placeholder="항목 입력"><button type="button" onclick="removePollOption(this)" class="text-red-400 font-bold px-2 text-base">×</button>`;
+            wrap.appendChild(row);
+            const input = row.querySelector('input');
+            if (typeof val === 'string') input.value = val; else input.focus();
+        }
+
+        function removePollOption(btn) {
+            const wrap = document.getElementById('pollOptWrap');
+            if (wrap.children.length <= 2) { alert('투표 항목은 최소 2개가 필요합니다.'); return; }
+            btn.parentElement.remove();
+        }
+
+        function savePoll() {
+            const title = document.getElementById('pollTitle').value.trim();
+            if (!title) { alert('투표 안건 제목을 입력하세요.'); return; }
+            const texts = [...document.querySelectorAll('.poll-opt-input')].map(i => i.value.trim()).filter(Boolean);
+            if (new Set(texts).size !== texts.length) { alert('같은 이름의 항목이 있습니다.'); return; }
+            if (texts.length < 2) { alert('투표 항목을 2개 이상 입력하세요.'); return; }
+            polls.push({
+                id: 'POLL-' + Date.now(),
+                title,
+                options: texts.map(t => ({ text: t, voters: [] }))
+            });
+            saveClubData();
+            renderPolls();
+            closeModal();
+        }
+
+        // 본인 확인: 선수등록에 입력된 휴대폰 번호의 뒷 4자리
+        function phonePin(player) {
+            const d = String((player && player.phone) || '').replace(/\D/g, '');
+            return d.length >= 4 ? d.slice(-4) : '';
+        }
+        function findVoterPlayer(v) {
+            return players.find(p => v.pid ? p.id === v.pid : p.name === v.name);
+        }
+        function sameVoter(v, player) {
+            return v.pid ? v.pid === player.id : v.name === player.name;
+        }
+
+        function openVoteModal(pollId, optIdx) {
+            const poll = polls.find(p => p.id === pollId);
+            if (!poll) return;
+            normPoll(poll);
+            if (players.length === 0) { alert('등록된 선수가 없습니다. 선수등록에서 먼저 등록해주세요.'); return; }
+            document.getElementById('modalTitle').innerText = '투표하기';
+            document.getElementById('modalBody').innerHTML = `
+                <div class="font-bold text-slate-800">Q. ${sqEsc(poll.title)}</div>
+                <div class="bg-jokgu-50 border border-jokgu-100 p-2 rounded-xl text-center">선택한 항목: <b class="text-jokgu-700">${sqEsc(poll.options[optIdx].text)}</b></div>
+                <div>
+                    <label class="block font-bold mb-1">본인 선택 (등록 선수만 투표 가능)</label>
+                    <select id="voterSelect" class="w-full border p-1.5 rounded bg-white">
+                        <option value="">-- 내 이름 선택 --</option>
+                        ${players.map(p => `<option value="${sqEsc(p.id)}">${sqEsc(p.name)} (${sqEsc(p.age || '')})</option>`).join('')}
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-bold mb-1">본인 확인: 휴대폰 번호 뒤 4자리</label>
+                    <input type="password" id="voterPin" inputmode="numeric" maxlength="4" placeholder="선수등록 시 입력한 번호 뒤 4자리" class="w-full border p-1.5 rounded">
+                </div>
+                <button onclick="submitVote('${poll.id}', ${optIdx})" class="w-full bg-jokgu-600 text-white font-bold py-2 rounded-xl mt-2">투표하기</button>
+            `;
+            openModal();
+        }
+
+        async function submitVote(pollId, optIdx) {
+            const poll = polls.find(p => p.id === pollId);
+            if (!poll) return;
+            const pid = document.getElementById('voterSelect').value;
+            const pin = document.getElementById('voterPin').value.trim();
+            const player = players.find(p => p.id === pid);
+            if (!player) { alert('본인 이름을 선택하세요.'); return; }
+
+            const correct = phonePin(player);
+            if (!correct) { alert(`${player.name}님은 휴대폰 번호가 등록되어 있지 않아 본인 확인을 할 수 없습니다.\n선수등록에서 휴대폰 번호를 먼저 등록해주세요.`); return; }
+            if (pin !== correct) { alert('본인 확인에 실패했습니다. 휴대폰 번호 뒤 4자리를 확인해주세요.'); return; }
+
+            const voter = player.name;
+            const prevIdx = poll.options.findIndex(o => o.voters.some(v => sameVoter(v, player)));
+            if (prevIdx === optIdx) { alert(`${voter}님은 이미 이 항목에 투표했습니다.`); return; }
+            if (prevIdx >= 0 && !confirm(`${voter}님은 이미 [${poll.options[prevIdx].text}]에 투표했습니다.\n[${poll.options[optIdx].text}](으)로 변경할까요?`)) return;
+
+            const time = new Date().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const ok = await mutate('polls', cur => {
+                const pl = cur.find(p => p.id === pollId);
+                if (!pl) return false;
+                normPoll(pl);
+                if (!pl.options[optIdx]) return false;
+                pl.options.forEach(o => { o.voters = o.voters.filter(v => !sameVoter(v, player)); });
+                pl.options[optIdx].voters.push({ name: voter, pid: player.id, time });
+            });
+            if (!ok) return;
+            pollOpen.add(`${pollId}-${optIdx}`);
+            renderPolls();
+            closeModal();
+        }
+
+        // 투표 취소도 본인만 가능
+        async function removeVote(pollId, optIdx, vIdx) {
+            const poll = polls.find(p => p.id === pollId);
+            if (!poll) return;
+            const v = poll.options[optIdx].voters[vIdx];
+            if (!v) return;
+            const player = findVoterPlayer(v);
+            if (player && phonePin(player)) {
+                const input = prompt(`${v.name}님 본인만 취소할 수 있습니다.\n휴대폰 번호 뒤 4자리를 입력하세요.`);
+                if (input === null) return;
+                if (input.trim() !== phonePin(player)) { alert('본인 확인에 실패했습니다.'); return; }
+            } else if (!confirm(`${v.name}님의 본인 확인 정보가 없습니다. 그래도 투표를 취소하시겠습니까?`)) return;
+            await mutate('polls', cur => {
+                const pl = cur.find(p => p.id === pollId);
+                if (!pl || !pl.options[optIdx]) return false;
+                pl.options[optIdx].voters = pl.options[optIdx].voters.filter(x => !(x.pid === v.pid && x.name === v.name && x.time === v.time));
+            });
+            renderPolls();
+        }
+
+        function renderPolls() {
+            const container = document.getElementById('pollList');
+            if (!container) return;
+            if (polls.length === 0) {
+                container.innerHTML = `<p class="text-slate-400 text-center py-4 text-xs">진행 중인 투표가 없습니다.</p>`;
+                return;
+            }
+            container.innerHTML = polls.map((p, idx) => {
+                normPoll(p);
+                const counts = p.options.map(o => o.voters.length + (o.legacy || 0));
+                const total = counts.reduce((a, b) => a + b, 0);
+                return `
+                <div class="border rounded-xl p-3 bg-slate-50 space-y-2 text-xs">
+                    <div class="flex justify-between items-start gap-2 border-b pb-1.5">
+                        <div>
+                            <div class="font-bold text-slate-800 text-sm">Q. ${sqEsc(p.title)}</div>
+                            <div class="text-[10px] text-slate-500 mt-0.5">총 ${total}표 · 항목을 누르면 투표</div>
+                        </div>
+                        <button onclick="deletePoll(${idx})" class="text-red-400 text-[10px] shrink-0">삭제</button>
+                    </div>
+                    ${p.options.map((o, oi) => {
+                        const pct = total ? Math.round(counts[oi] / total * 100) : 0;
+                        const key = `${p.id}-${oi}`;
+                        return `
+                        <div class="border rounded-xl bg-white overflow-hidden">
+                            <button onclick="openVoteModal('${p.id}', ${oi})" class="relative w-full text-left p-2">
+                                <div class="absolute inset-y-0 left-0 bg-jokgu-100" style="width:${pct}%"></div>
+                                <div class="relative flex justify-between items-center gap-2">
+                                    <span class="font-bold text-slate-800">${sqEsc(o.text)}</span>
+                                    <span class="font-bold text-jokgu-700 shrink-0">${counts[oi]}표 (${pct}%)</span>
+                                </div>
+                            </button>
+                            <details class="border-t" ${pollOpen.has(key) ? 'open' : ''} ontoggle="togglePollOpen('${key}', this.open)">
+                                <summary class="px-2 py-1.5 text-[11px] text-slate-500 cursor-pointer">투표자 ${o.voters.length}명 보기${o.legacy ? ` (이전 기록 ${o.legacy}표는 명단 없음)` : ''}</summary>
+                                <div class="px-2 pb-2 flex flex-wrap gap-1">
+                                    ${o.voters.length === 0 ? '<span class="text-[11px] text-slate-400">아직 투표자가 없습니다.</span>' : o.voters.map((v, vi) => `
+                                        <span class="bg-slate-100 border rounded-full pl-2 pr-1 py-0.5 text-[11px] flex items-center gap-1">
+                                            <b>${sqEsc(v.name)}</b><span class="text-slate-400">${sqEsc(v.time || '')}</span>
+                                            <button onclick="removeVote('${p.id}', ${oi}, ${vi})" class="text-red-400 font-bold px-1">×</button>
+                                        </span>`).join('')}
+                                </div>
+                            </details>
+                        </div>`;
+                    }).join('')}
+                </div>`;
+            }).join('');
+        }
+
+        function deletePoll(idx) {
+            if (!confirm('이 투표를 삭제하시겠습니까? (투표 결과도 함께 삭제됩니다)')) return;
+            polls.splice(idx, 1);
+            saveClubData();
+            renderPolls();
+        }
+
+        
+function openNoticeModal() {
+            document.getElementById('modalTitle').innerText = '공지사항 작성';
+            document.getElementById('modalBody').innerHTML = `
+                <div><label class="block font-bold">제목</label><input type="text" id="nTitle" class="w-full border p-1.5 rounded"></div>
+                <div><label class="block font-bold">내용</label><textarea id="nBody" rows="4" class="w-full border p-1.5 rounded"></textarea></div>
+                <button onclick="saveNotice()" class="w-full bg-jokgu-600 text-white font-bold py-2 rounded-xl mt-2">등록하기</button>
+            `;
+            openModal();
+        }
+
+        function saveNotice() {
+            const title = document.getElementById('nTitle').value.trim();
+            const body = document.getElementById('nBody').value.trim();
+            if (!title) return;
+            notices.push({ id: Date.now(), title, body, date: getTodayStr() });
+            saveClubData();
+            renderNotices();
+            closeModal();
+        }
+
+        function renderNotices() {
+            const container = document.getElementById('noticeList');
+            if (!container) return;
+            if (notices.length === 0) {
+                container.innerHTML = `<p class="text-slate-400 text-center py-4 text-xs">등록된 공지사항이 없습니다.</p>`;
+                return;
+            }
+            container.innerHTML = notices.map((n, idx) => `
+                <div class="border rounded-xl p-3 bg-slate-50 space-y-1 text-xs">
+                    <div class="flex justify-between items-center text-slate-500 border-b pb-1">
+                        <span class="font-bold text-slate-800">${n.title}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px]">${n.date}</span>
+                            <button onclick="deleteNotice(${idx})" class="text-red-400">삭제</button>
+                        </div>
+                    </div>
+                    <div class="text-slate-600 pt-1 whitespace-pre-line">${n.body}</div>
+                </div>
+            `).join('');
+        }
+
+        function deleteNotice(idx) {
+            notices.splice(idx, 1);
+            saveClubData();
+            renderNotices();
+        }
+
+        function openVideoModal() {
+            document.getElementById('modalTitle').innerText = '동영상 및 메모 등록';
+            document.getElementById('modalBody').innerHTML = `
+                <div><label class="block font-bold">제목</label><input type="text" id="vTitle" class="w-full border p-1.5 rounded"></div>
+                <div><label class="block font-bold">메모</label><textarea id="vMemo" rows="2" class="w-full border p-1.5 rounded"></textarea></div>
+                <div><label class="block font-bold">동영상 파일 첨부</label><input type="file" id="vFile" accept="video/*" class="w-full text-xs"></div>
+                <button onclick="saveVideo()" class="w-full bg-jokgu-600 text-white font-bold py-2 rounded-xl mt-2">저장하기</button>
+            `;
+            openModal();
+        }
+
+        async function saveVideo() {
+            const title = document.getElementById('vTitle').value.trim();
+            const memo = document.getElementById('vMemo').value.trim();
+            const file = document.getElementById('vFile').files[0];
+            if (!title) return;
+            const newVid = { title, memo, date: getTodayStr(), url: '', path: '' };
+            if (file) {
+                if (file.size > 100 * 1024 * 1024) { alert('영상 용량이 100MB를 넘어 저장할 수 없습니다. 더 짧게 촬영해주세요.'); return; }
+                const ext = (file.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4';
+                newVid.path = `clubs/${clubId}/videos/${Date.now()}.${ext}`;
+                document.getElementById('modalBody').innerHTML = '<p class="text-center py-6 font-bold">영상 업로드 중입니다. 창을 닫지 말고 기다려주세요...</p>';
+                try { newVid.url = await uploadBlob(newVid.path, file); }
+                catch (err) { console.error(err); alert('업로드 실패: ' + (err.message || err)); closeModal(); return; }
+            }
+            videos.push(newVid);
+            saveClubData();
+            renderVideos();
+            closeModal();
+        }
+
+        function renderVideos() {
+            const container = document.getElementById('videoList');
+            if (!container) return;
+            if (videos.length === 0) {
+                container.innerHTML = `<p class="text-slate-400 text-center py-4 text-xs">등록된 동영상이 없습니다.</p>`;
+                return;
+            }
+            container.innerHTML = videos.map((v, idx) => `
+                <div class="border rounded-xl p-3 bg-slate-50 space-y-2 text-xs">
+                    <div class="flex justify-between items-center border-b pb-1">
+                        <span class="font-bold text-slate-800">${v.title} (${v.date})</span>
+                        <button onclick="deleteVideo(${idx})" class="text-red-400 font-bold">삭제</button>
+                    </div>
+                    ${v.url ? `<video src="${v.url}" controls class="w-full rounded-lg max-h-48 bg-black"></video>` : ''}
+                    <div class="text-slate-600 bg-white p-2 rounded border">${v.memo || '메모 없음'}</div>
+                </div>
+            `).join('');
+        }
+
+        function deleteVideo(idx) {
+            if (videos[idx] && videos[idx].path) storage.ref(videos[idx].path).delete().catch(() => {});
+            videos.splice(idx, 1);
+            saveClubData();
+            renderVideos();
+        }
+
+        // --- 상단 탭 바 마우스 휠 / 드래그 스크롤 ---
+        (function () {
+            const bar = document.getElementById('tabBar');
+            if (!bar) return;
+            bar.addEventListener('wheel', e => {
+                if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                    bar.scrollLeft += e.deltaY;
+                    e.preventDefault();
+                }
+            }, { passive: false });
+            let down = false, startX = 0, startLeft = 0, moved = false;
+            bar.addEventListener('mousedown', e => { down = true; moved = false; startX = e.pageX; startLeft = bar.scrollLeft; });
+            window.addEventListener('mouseup', () => { down = false; bar.classList.remove('dragging'); });
+            window.addEventListener('mousemove', e => {
+                if (!down) return;
+                const dx = e.pageX - startX;
+                if (Math.abs(dx) > 5) { moved = true; bar.classList.add('dragging'); }
+                bar.scrollLeft = startLeft - dx;
+            });
+            // 드래그 직후에는 탭이 눌리지 않도록 클릭 차단
+            bar.addEventListener('click', e => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+        })();
+
+        // --- COMMON UTILS ---
+        function openModal() {
+            document.getElementById('modalBackdrop').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('modalBackdrop').classList.add('hidden');
+        }
+
+        function shareKakao() {
+            const shareText = `[족구 동우회 스마트앱]\n동우회: ${currentClub || '족구 동우회'}\n스마트 족구 회원관리 및 경기대진 앱입니다.`;
+            if (navigator.share) {
+                navigator.share({
+                    title: '족구 동우회 스마트앱',
+                    text: shareText,
+                    url: window.location.href
+                }).catch(() => {});
+            } else {
+                const dummy = document.createElement('textarea');
+                document.body.appendChild(dummy);
+                dummy.value = shareText + '\n' + window.location.href;
+                dummy.select();
+                document.execCommand('copy');
+                document.body.removeChild(dummy);
+                alert('클립보드에 공유 정보가 복사되었습니다. 카카오톡에 붙여넣기 하세요!');
+            }
+        }
+    </script>
+</body>
+</html>
