@@ -219,6 +219,19 @@
                         <!-- Attendance logs injected -->
                     </div>
                 </div>
+
+                <div class="border-t pt-3 space-y-2">
+                    <h3 class="font-bold text-xs text-slate-700"><i class="fa-solid fa-clock-rotate-left"></i> 과거 출석 기록 (날짜별)</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="flex gap-1">
+                            <input type="date" id="pastDateFilter" onchange="renderPastAttendance()" class="flex-1 min-w-0 border px-2 py-1.5 rounded-lg text-xs bg-white">
+                            <button onclick="document.getElementById('pastDateFilter').value=''; renderPastAttendance()" class="bg-slate-200 text-slate-700 text-[11px] font-bold px-2 rounded-lg shrink-0">전체</button>
+                        </div>
+                        <input type="text" id="pastNameSearch" oninput="renderPastAttendance()" placeholder="선수 이름 검색" class="border px-2 py-1.5 rounded-lg text-xs bg-white">
+                    </div>
+                    <div id="pastAttendSummary" class="text-[11px] text-slate-500"></div>
+                    <div id="pastAttendList" class="space-y-2 max-h-80 overflow-y-auto"></div>
+                </div>
             </section>
 
             <!-- SECTION 6: 선수구성 (기본버전 방식) -->
@@ -1056,6 +1069,7 @@
             }).join('');
 
             renderAttendanceHistory();
+            renderPastAttendance();
         }
 
         async function clockIn(playerId) {
@@ -1101,6 +1115,51 @@
                         <button onclick="deleteAttendance('${a.id}')" class="text-red-400 font-bold text-[10px]">삭제</button>
                     </div>
                 `;
+            }).join('');
+        }
+
+        const pastOpen = new Set();   // 펼쳐 둔 날짜 (다시 그려도 유지)
+        function togglePastOpen(d, isOpen) { isOpen ? pastOpen.add(d) : pastOpen.delete(d); }
+
+        function renderPastAttendance() {
+            const c = document.getElementById('pastAttendList');
+            if (!c) return;
+            const dateFilter = document.getElementById('pastDateFilter').value;
+            const q = document.getElementById('pastNameSearch').value.trim().toLowerCase();
+            const today = getTodayStr();
+            const days = ['일', '월', '화', '수', '목', '금', '토'];
+            const nameOf = a => (players.find(p => p.id === a.playerId) || {}).name || '(삭제된 선수)';
+
+            const byDate = {};
+            attendance.forEach(a => {
+                if (q && !nameOf(a).toLowerCase().includes(q)) return;
+                (byDate[a.date] = byDate[a.date] || []).push(a);
+            });
+            let dates = Object.keys(byDate).sort().reverse();
+            if (dateFilter) dates = dates.filter(d => d === dateFilter);
+
+            document.getElementById('pastAttendSummary').innerText = `총 ${dates.length}일 기록`;
+            if (dates.length === 0) {
+                c.innerHTML = '<p class="text-xs text-slate-400 text-center py-3">해당하는 출석 기록이 없습니다.</p>';
+                return;
+            }
+            c.innerHTML = dates.map(d => {
+                const recs = byDate[d].slice().sort((a, b) => String(a.clockIn).localeCompare(String(b.clockIn)));
+                const dayName = days[new Date(d + 'T00:00:00').getDay()] || '';
+                return `
+                <details class="border rounded-xl bg-slate-50 text-xs" ${pastOpen.has(d) || dateFilter ? 'open' : ''} ontoggle="togglePastOpen('${d}', this.open)">
+                    <summary class="px-3 py-2 cursor-pointer flex justify-between items-center gap-2">
+                        <span class="font-bold text-slate-800">${sqEsc(d)} (${dayName})${d === today ? ' <span class="text-jokgu-700">· 오늘</span>' : ''}</span>
+                        <span class="text-jokgu-700 font-bold shrink-0">출석 ${recs.length}명</span>
+                    </summary>
+                    <div class="px-3 pb-2 space-y-1">
+                        ${recs.map(a => `
+                            <div class="flex justify-between items-center bg-white border rounded px-2 py-1">
+                                <span class="font-bold text-slate-800">${sqEsc(nameOf(a))}</span>
+                                <span class="text-[11px] text-slate-500">입장 ${sqEsc(a.clockIn || '-')} / ${a.clockOut ? '퇴장 ' + sqEsc(a.clockOut) : '퇴근 기록 없음'}</span>
+                            </div>`).join('')}
+                    </div>
+                </details>`;
             }).join('');
         }
 
@@ -1325,26 +1384,58 @@
             });
         }
 
-        function showTeamPopup(matchTitle, idx) {
+        function showTeamPopup(matchTitle, idx, setNumArg) {
             const courtElem = document.getElementById(`match-court-${idx}`);
             const court = courtElem ? courtElem.value : '1코트';
+            const setNum = setNumArg || parseInt(document.getElementById('squadSetSelect').value) || 1;
+            document.getElementById('squadSetSelect').value = setNum;   // 선수구성 화면과 같은 세트 기준
+            const [t1, t2] = matchTitle.split(' vs ').map(x => x.trim());
+            const teams = getSquadTeams(setNum);
 
-            document.getElementById('modalTitle').innerText = '🏆 게임팀 대진 정보';
+            const teamBlock = t => {
+                const ms = teams[t] || [];
+                return `
+                <div class="bg-slate-50 border rounded-xl p-2">
+                    <div class="font-bold text-jokgu-800 border-b pb-1 mb-1">${sqEsc(t)} (${ms.length}명)</div>
+                    ${ms.length === 0 ? '<p class="text-slate-400 text-[11px] py-1">배정된 선수가 없습니다.</p>' : ms.map(m => `
+                        <div class="flex items-center gap-1.5 py-0.5">
+                            ${sqAvatar(m.name, 'w-6 h-6')}
+                            <span class="font-bold text-slate-800">${sqEsc(m.name)}</span>
+                            <span class="text-[10px] bg-blue-100 text-blue-800 px-1 rounded font-semibold">${sqEsc(m.position)}</span>
+                        </div>`).join('')}
+                </div>`;
+            };
+
+            document.getElementById('modalTitle').innerText = '🏆 게임팀 대진 · 선수 명단';
             document.getElementById('modalBody').innerHTML = `
-                <div class="text-center space-y-3 p-2">
-                    <div class="inline-block bg-amber-100 text-amber-900 font-bold text-xs px-3 py-1 rounded-full border border-amber-300">
-                        ${court} 배정
-                    </div>
-                    <div class="text-base font-black text-jokgu-800">${matchTitle}</div>
-                    <p class="text-xs text-slate-500 bg-slate-50 p-2.5 rounded-xl border">
-                        출석한 선수 명단과 연계된 대진 정보입니다.<br>아래 버튼을 누르면 코트 및 대진명이 음성으로 출력됩니다.
-                    </p>
-                    <button onclick="speakText('${court}, ${matchTitle} 대진 경기입니다.')" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow">
-                        <i class="fa-solid fa-volume-high"></i> 팀명 및 선수 음성 출력
-                    </button>
+                <div class="text-center space-y-1">
+                    <div class="inline-block bg-amber-100 text-amber-900 font-bold text-xs px-3 py-1 rounded-full border border-amber-300">${sqEsc(court)} 배정</div>
+                    <div class="text-base font-black text-jokgu-800">${sqEsc(matchTitle)}</div>
                 </div>
+                <div class="flex items-center justify-between gap-2">
+                    <label class="font-bold text-slate-700">선수구성 세트</label>
+                    <select onchange="showTeamPopup('${matchTitle}', ${idx}, parseInt(this.value))" class="border px-2 py-1 rounded-lg bg-slate-50 font-bold">
+                        ${[1, 2, 3, 4, 5, 6].map(n => `<option value="${n}" ${n === setNum ? 'selected' : ''}>${n}세트</option>`).join('')}
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-2">${teamBlock(t1)}${teamBlock(t2)}</div>
+                <button onclick="speakMatchTeams('${matchTitle}', ${idx}, ${setNum})" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow">
+                    <i class="fa-solid fa-volume-high"></i> 팀명 및 선수 음성 출력
+                </button>
             `;
             openModal();
+        }
+
+        function speakMatchTeams(matchTitle, idx, setNum) {
+            const courtElem = document.getElementById(`match-court-${idx}`);
+            const court = courtElem ? courtElem.value : '1코트';
+            const [t1, t2] = matchTitle.split(' vs ').map(x => x.trim());
+            const teams = getSquadTeams(setNum);
+            const line = t => {
+                const ms = teams[t] || [];
+                return `${t}: ` + (ms.length ? ms.map(m => `${m.name} ${m.position}`).join(', ') : '선수 없음') + '. ';
+            };
+            speakText(`${court}, ${matchTitle} 경기입니다. ${line(t1)}${line(t2)}`);
         }
 
         function speakMatchInfoByIndex(idx, match, ref) {
