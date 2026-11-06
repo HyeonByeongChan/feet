@@ -1278,14 +1278,14 @@
         function speakSquadMember(tName, idx) {
             const setNum = parseInt(document.getElementById('squadSetSelect').value);
             const m = (getSquadTeams(setNum)[tName] || [])[idx];
-            if (m) speakText(m.name);
+            if (m) speakText(`${tName}, 선수 ${m.name}, 포지션 ${m.position}`);
         }
 
         function speakSquadTeam(tName) {
             const setNum = parseInt(document.getElementById('squadSetSelect').value);
             const members = getSquadTeams(setNum)[tName] || [];
             if (members.length === 0) { speakText(`${setNum}세트 ${tName}에는 배정된 선수가 없습니다.`); return; }
-            speakText(`${setNum}세트 ${tName} 선수 구성입니다. ` + members.map(m => m.name).join(', ') + '.');
+            speakText(`${setNum}세트 ${tName} 선수 구성입니다. ` + members.map(m => `${m.name} ${m.position}`).join(', ') + '.');
         }
 
         function speakAllSquad() {
@@ -1296,7 +1296,7 @@
             if (entries.length === 0) fullText += '배치된 선수가 없습니다.';
             entries.forEach(([tName, members]) => {
                 fullText += `${tName}: `;
-                fullText += members.length === 0 ? '선수 없음. ' : members.map(m => m.name).join(', ') + '. ';
+                fullText += members.length === 0 ? '선수 없음. ' : members.map(m => `${m.name} ${m.position}`).join(', ') + '. ';
             });
             speakText(fullText);
         }
@@ -1440,7 +1440,7 @@
             const teams = getSquadTeams(setNum);
             const line = t => {
                 const ms = teams[t] || [];
-                return `${t}: ` + (ms.length ? ms.map(m => m.name).join(', ') : '선수 없음') + '. ';
+                return `${t}: ` + (ms.length ? ms.map(m => `${m.name} ${m.position}`).join(', ') : '선수 없음') + '. ';
             };
             speakText(`${court}, ${matchTitle} 경기입니다. ${line(t1)}${line(t2)}`);
         }
