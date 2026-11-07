@@ -700,19 +700,46 @@
             location.reload();
         }
 
-        function changePassword() {
+        // 서버 주소가 '동우회 이름+비밀번호'로 정해지므로, 비밀번호 변경 = 새 주소로 데이터 이전 후 이전 주소 삭제
+        async function changePassword() {
             const newPw = document.getElementById('newPwInput').value.trim();
-            const pwRegex = /^(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])(?=.*\d).{5}$/;
-            if (!pwRegex.test(newPw)) {
-                alert('새 비밀번호는 숫자 4자리 + 특수문자 1개 조합이어야 합니다.');
+            if (newPw.length < 4 || !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPw)) {
+                alert('새 비밀번호는 4자 이상이며 특수문자가 1개 이상 포함되어야 합니다. (예: 1234!)');
                 return;
             }
-            const storedClubKey = `jokgu_club_${currentClub}`;
-            const clubData = JSON.parse(localStorage.getItem(storedClubKey));
-            clubData.password = newPw;
-            localStorage.setItem(storedClubKey, JSON.stringify(clubData));
-            alert('비밀번호가 성공적으로 변경되었습니다.');
-            document.getElementById('newPwInput').value = '';
+            if (!clubRef) return;
+            if (!confirm('비밀번호를 바꾸면 다른 회원도 새 비밀번호로 다시 접속해야 합니다. 계속할까요?')) return;
+            try {
+                const name = currentClub, oldId = clubId, oldRef = clubRef;
+                const newId = await sha256Hex(`${name.toLowerCase()}::${newPw}::jokgu-v1`);
+                if (newId === oldId) { alert('현재 비밀번호와 같습니다.'); return; }
+                const newRef = db.collection('clubs').doc(newId);
+                if ((await newRef.get()).exists) { alert('같은 이름·비밀번호의 동우회가 이미 있어 변경할 수 없습니다.'); return; }
+
+                const old = await oldRef.collection('data').get();
+                await newRef.set({ name, createdAt: Date.now() });
+                const copy = db.batch();
+                old.docs.forEach(d => copy.set(newRef.collection('data').doc(d.id), d.data()));
+                await copy.commit();
+
+                // 이 기기에 저장된 동영상도 새 동우회로 옮김
+                try {
+                    for (const v of await MediaDB.getVideos(oldId)) { v.club = newId; await MediaDB.saveVideo(v); }
+                } catch (e) { console.warn('동영상 이전 실패', e); }
+
+                enterClub(newId, name);   // 새 주소로 접속 (이전 구독은 자동 해제)
+
+                const del = db.batch();
+                old.docs.forEach(d => del.delete(d.ref));
+                del.delete(oldRef);
+                await del.commit();
+
+                document.getElementById('newPwInput').value = '';
+                alert('비밀번호가 변경되었습니다.\n다른 회원은 새 비밀번호로 다시 접속해야 합니다.');
+            } catch (err) {
+                console.error(err);
+                alert('비밀번호 변경에 실패했습니다.\n' + (err.message || err));
+            }
         }
 
         // --- LOCAL STORAGE DATA LOAD/SAVE ---
