@@ -99,6 +99,7 @@
                 <span class="text-slate-400">접속 동우회:</span>
                 <span id="currentClubDisplay" class="font-bold text-jokgu-700 text-sm ml-1">-</span>
             </div>
+            <button onclick="toggleVoiceRx()" id="voiceRxBtn" class="text-[11px] font-bold px-2 py-1 rounded-full bg-jokgu-600 text-white"></button>
             <div id="liveClockMini" class="lcd-font font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                 00:00:00
             </div>
@@ -239,7 +240,7 @@
                 <div class="border-b pb-2 flex justify-between items-center">
                     <h2 class="font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-people-group text-jokgu-600"></i> 팀별 선수 구성 (6개 세트)</h2>
                     <button onclick="speakAllSquad()" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 shadow">
-                        <i class="fa-solid fa-volume-high"></i> 전체 음성
+                        <i class="fa-solid fa-volume-high"></i> 전체 음성 (모두에게)
                     </button>
                 </div>
 
@@ -548,7 +549,7 @@
                 refreshView();
             }, err => alert('서버 연결 오류: ' + err.message));
         }
-        function stopSync() { if (unsubSync) { unsubSync(); unsubSync = null; } syncReady = false; }
+        function stopSync() { if (unsubSync) { unsubSync(); unsubSync = null; } syncReady = false; stopBroadcastListen(); }
 
         function refreshView() {
             const t = activeTab;
@@ -560,7 +561,6 @@
             if (t === 8) renderScoreHistory();
             if (t === 9) renderPolls();
             if (t === 10) renderNotices();
-            if (t === 12) renderVideos();
         }
 
         // 동시 입력이 몰리는 항목(출석·투표)은 서버 값을 읽어 고친 뒤 저장 → 남의 입력을 덮어쓰지 않음
@@ -665,6 +665,8 @@
             localStorage.setItem('jokgu_active_club', JSON.stringify({ id, name }));
             loadClubData();
             startSync();
+            startBroadcastListen();
+            updateVoiceRxBtn();
             unlockApp();
         }
 
@@ -948,7 +950,10 @@
                         <div class="text-slate-500">생년월일: ${p.birth} (${p.age})</div>
                         <div class="text-slate-500">포지션: <b class="text-slate-700">${p.position}</b> | 📞 ${p.phone}</div>
                     </div>
-                    <button onclick="deletePlayer('${p.id}')" class="text-slate-400 hover:text-red-500 p-1"><i class="fa-solid fa-trash"></i></button>
+                    <div class="flex flex-col items-center gap-2 shrink-0">
+                        ${p.phone ? `<a href="tel:${String(p.phone).replace(/[^0-9+]/g, '')}" title="전화 걸기" class="bg-green-600 hover:bg-green-700 text-white w-8 h-8 rounded-full flex items-center justify-center shadow"><i class="fa-solid fa-phone text-xs"></i></a>` : ''}
+                        <button onclick="deletePlayer('${p.id}')" class="text-slate-400 hover:text-red-500 p-1"><i class="fa-solid fa-trash"></i></button>
+                    </div>
                 </div>
             `).join('');
         }
@@ -1298,7 +1303,7 @@
                 fullText += `${tName}: `;
                 fullText += members.length === 0 ? '선수 없음. ' : members.map(m => `${m.name} ${m.position}`).join(', ') + '. ';
             });
-            speakText(fullText);
+            broadcastSpeak(fullText);
         }
 
         // --- SECTION 7: 게임팀 구성 (League Presets & Audio) ---
@@ -1872,49 +1877,95 @@ function openNoticeModal() {
             openModal();
         }
 
+        // --- 동영상: 이 기기(IndexedDB)에 저장 — 축구 코드와 같은 방식 ---
+        let idb = null;   // (주의) Firestore 변수 db와 이름이 겹치지 않도록 idb 사용
+        function initVideoDB() {
+            return new Promise((resolve, reject) => {
+                if (idb) return resolve(idb);
+                const req = indexedDB.open('JokguClubVideoDB', 1);
+                req.onupgradeneeded = e => {
+                    const d = e.target.result;
+                    if (!d.objectStoreNames.contains('videos')) d.createObjectStore('videos', { keyPath: 'id' });
+                };
+                req.onsuccess = e => { idb = e.target.result; resolve(idb); };
+                req.onerror = e => reject(e);
+            });
+        }
+
+        const MediaDB = {
+            async saveVideo(videoData) {
+                const d = await initVideoDB();
+                return new Promise((resolve, reject) => {
+                    const req = d.transaction('videos', 'readwrite').objectStore('videos').put(videoData);
+                    req.onsuccess = () => resolve();
+                    req.onerror = e => reject(e);
+                });
+            },
+            async getVideos(club) {
+                const d = await initVideoDB();
+                return new Promise((resolve, reject) => {
+                    const req = d.transaction('videos', 'readonly').objectStore('videos').getAll();
+                    req.onsuccess = () => resolve((req.result || []).filter(v => v.club === club));
+                    req.onerror = e => reject(e);
+                });
+            },
+            async deleteVideo(id) {
+                const d = await initVideoDB();
+                return new Promise((resolve, reject) => {
+                    const req = d.transaction('videos', 'readwrite').objectStore('videos').delete(id);
+                    req.onsuccess = () => resolve();
+                    req.onerror = e => reject(e);
+                });
+            }
+        };
+
         async function saveVideo() {
             const title = document.getElementById('vTitle').value.trim();
             const memo = document.getElementById('vMemo').value.trim();
             const file = document.getElementById('vFile').files[0];
-            if (!title) return;
-            const newVid = { title, memo, date: getTodayStr(), url: '', path: '' };
-            if (file) {
-                if (file.size > 100 * 1024 * 1024) { alert('영상 용량이 100MB를 넘어 저장할 수 없습니다. 더 짧게 촬영해주세요.'); return; }
-                const ext = (file.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4';
-                newVid.path = `clubs/${clubId}/videos/${Date.now()}.${ext}`;
-                document.getElementById('modalBody').innerHTML = '<p class="text-center py-6 font-bold">영상 업로드 중입니다. 창을 닫지 말고 기다려주세요...</p>';
-                try { newVid.url = await uploadBlob(newVid.path, file); }
-                catch (err) { console.error(err); alert('업로드 실패: ' + (err.message || err)); closeModal(); return; }
+            if (!title) { alert('제목을 입력하세요.'); return; }
+            if (file && file.size > 100 * 1024 * 1024) { alert('영상 용량이 100MB를 넘어 저장할 수 없습니다. 더 짧게 촬영해주세요.'); return; }
+            document.getElementById('modalBody').innerHTML = '<p class="text-center py-6 font-bold">동영상 저장 중입니다. 잠시만 기다려주세요...</p>';
+            try {
+                const dataUrl = file ? await blobToDataURL(file) : '';
+                await MediaDB.saveVideo({ id: Date.now(), club: clubId, title, memo, date: getTodayStr(), dataUrl });
+                closeModal();
+                renderVideos();
+            } catch (err) {
+                console.error(err);
+                alert('동영상 저장 중 오류가 발생했습니다.');
+                closeModal();
             }
-            videos.push(newVid);
-            saveClubData();
-            renderVideos();
-            closeModal();
         }
 
-        function renderVideos() {
+        async function renderVideos() {
             const container = document.getElementById('videoList');
-            if (!container) return;
-            if (videos.length === 0) {
-                container.innerHTML = `<p class="text-slate-400 text-center py-4 text-xs">등록된 동영상이 없습니다.</p>`;
-                return;
-            }
-            container.innerHTML = videos.map((v, idx) => `
-                <div class="border rounded-xl p-3 bg-slate-50 space-y-2 text-xs">
-                    <div class="flex justify-between items-center border-b pb-1">
-                        <span class="font-bold text-slate-800">${v.title} (${v.date})</span>
-                        <button onclick="deleteVideo(${idx})" class="text-red-400 font-bold">삭제</button>
+            if (!container || !clubId) return;
+            try {
+                const list = await MediaDB.getVideos(clubId);
+                if (list.length === 0) {
+                    container.innerHTML = `<p class="text-slate-400 text-center py-4 text-xs">등록된 동영상이 없습니다.</p>`;
+                    return;
+                }
+                container.innerHTML = list.slice().reverse().map(v => `
+                    <div class="border rounded-xl p-3 bg-slate-50 space-y-2 text-xs">
+                        <div class="flex justify-between items-center border-b pb-1">
+                            <span class="font-bold text-slate-800">${sqEsc(v.title)} (${sqEsc(v.date)})</span>
+                            <button onclick="deleteVideo(${v.id})" class="text-red-400 font-bold">삭제</button>
+                        </div>
+                        ${v.dataUrl ? `<video src="${v.dataUrl}" controls class="w-full rounded-lg max-h-48 bg-black"></video>` : ''}
+                        <div class="text-slate-600 bg-white p-2 rounded border">${v.memo ? sqEsc(v.memo) : '메모 없음'}</div>
                     </div>
-                    ${v.url ? `<video src="${v.url}" controls class="w-full rounded-lg max-h-48 bg-black"></video>` : ''}
-                    <div class="text-slate-600 bg-white p-2 rounded border">${v.memo || '메모 없음'}</div>
-                </div>
-            `).join('');
+                `).join('');
+            } catch (err) {
+                console.error(err);
+                container.innerHTML = '<p class="text-xs text-red-400 text-center py-4">영상을 불러오는 중 오류가 발생했습니다.</p>';
+            }
         }
 
-        function deleteVideo(idx) {
-            if (videos[idx] && videos[idx].path) storage.ref(videos[idx].path).delete().catch(() => {});
-            videos.splice(idx, 1);
-            saveClubData();
+        async function deleteVideo(id) {
+            if (!confirm('이 동영상을 삭제하시겠습니까? (이 기기에서 삭제되며 복구할 수 없습니다)')) return;
+            await MediaDB.deleteVideo(id);
             renderVideos();
         }
 
@@ -1940,6 +1991,89 @@ function openNoticeModal() {
             // 드래그 직후에는 탭이 눌리지 않도록 클릭 차단
             bar.addEventListener('click', e => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
         })();
+
+        // --- 전체 음성 방송 (접속 중인 모든 기기에서 음성 출력) ---
+        const CLIENT_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        let voiceRx = localStorage.getItem('jokgu_voice_rx') !== '0';   // 음성 수신 ON/OFF (기기별 저장)
+        let unsubBroadcast = null, bcBaseline = false, bcLastId = null, bcPending = null;
+
+        function updateVoiceRxBtn() {
+            const b = document.getElementById('voiceRxBtn');
+            if (!b) return;
+            b.innerHTML = voiceRx ? '<i class="fa-solid fa-volume-high"></i> 수신 ON' : '<i class="fa-solid fa-volume-xmark"></i> 수신 OFF';
+            b.className = 'text-[11px] font-bold px-2 py-1 rounded-full ' + (voiceRx ? 'bg-jokgu-600 text-white' : 'bg-slate-300 text-slate-600');
+        }
+
+        function toggleVoiceRx() {
+            voiceRx = !voiceRx;
+            localStorage.setItem('jokgu_voice_rx', voiceRx ? '1' : '0');
+            updateVoiceRxBtn();
+            if (voiceRx) speakText('음성 수신을 켰습니다.');   // 터치로 실행되므로 이후 소리 재생이 허용됨
+            else if ('speechSynthesis' in window) speechSynthesis.cancel();
+        }
+
+        function showBcHint(on) {
+            let el = document.getElementById('bcHint');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'bcHint';
+                el.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-amber-500 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg';
+                el.textContent = '🔊 음성 안내가 도착했어요 — 화면을 한 번 터치하면 재생됩니다';
+                document.body.appendChild(el);
+            }
+            el.style.display = on ? 'block' : 'none';
+        }
+
+        // 브라우저는 사용자가 화면을 한 번 터치해야 소리를 허용함 → 첫 터치 때 잠금 해제
+        document.addEventListener('pointerdown', () => {
+            if ('speechSynthesis' in window && !window.__ttsUnlocked) {
+                window.__ttsUnlocked = true;
+                const u = new SpeechSynthesisUtterance(' ');
+                u.volume = 0;
+                speechSynthesis.speak(u);
+            }
+            if (bcPending && voiceRx) { const t = bcPending; bcPending = null; showBcHint(false); speakText(t); }
+        }, true);
+
+        function playBroadcast(text) {
+            if (!voiceRx || !('speechSynthesis' in window)) return;
+            if (!koVoice) pickKoVoice();
+            const u = new SpeechSynthesisUtterance(text);
+            u.lang = 'ko-KR';
+            if (koVoice) u.voice = koVoice;
+            u.rate = 0.9; u.volume = 1; u.pitch = 1;
+            u.onerror = e => { if (e.error === 'not-allowed') { bcPending = text; showBcHint(true); } };
+            speechSynthesis.cancel();
+            setTimeout(() => { speechSynthesis.resume(); speechSynthesis.speak(u); }, 120);
+        }
+
+        // 보내기: 내 기기에서 바로 재생 + 서버에 방송 기록 → 다른 접속자 기기에서 자동 재생
+        function broadcastSpeak(text) {
+            speakText(text);
+            if (!clubRef) return;
+            clubRef.collection('data').doc('broadcast').set({
+                id: Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+                text, by: CLIENT_ID, at: Date.now()
+            }).catch(err => alert('다른 사용자에게 음성을 보내지 못했습니다.\n' + (err.message || err)));
+        }
+
+        function startBroadcastListen() {
+            stopBroadcastListen();
+            bcBaseline = false; bcLastId = null;
+            unsubBroadcast = clubRef.collection('data').doc('broadcast').onSnapshot(snap => {
+                const d = snap.exists ? snap.data() : null;
+                if (!bcBaseline) { bcBaseline = true; bcLastId = d ? d.id : null; return; }   // 접속 직후엔 지난 방송을 재생하지 않음
+                if (!d || d.id === bcLastId) return;
+                bcLastId = d.id;
+                if (d.by === CLIENT_ID) return;                      // 보낸 기기는 이미 재생함
+                if (Date.now() - (d.at || 0) > 30000) return;        // 30초 지난 방송은 무시
+                playBroadcast(d.text);
+            }, err => console.warn('방송 수신 오류', err));
+        }
+
+        function stopBroadcastListen() {
+            if (unsubBroadcast) { unsubBroadcast(); unsubBroadcast = null; }
+        }
 
         // --- COMMON UTILS ---
         function openModal() {
