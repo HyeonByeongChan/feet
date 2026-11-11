@@ -997,6 +997,7 @@
         }
 
         function openPlayerModal() {
+            playerPhotoDraft = '';
             const autoRegNum = 'REG-' + Math.floor(1000 + Math.random() * 9000);
             document.getElementById('modalTitle').innerText = '선수 신규 등록';
             document.getElementById('modalBody').innerHTML = `
@@ -1037,7 +1038,16 @@
                 </div>
                 <div><label class="block font-bold">핸드폰</label><input type="tel" id="pPhone" class="w-full border p-1.5 rounded" placeholder="010-0000-0000"></div>
                 <div><label class="block font-bold">주소</label><input type="text" id="pAddr" class="w-full border p-1.5 rounded"></div>
-                <div><label class="block font-bold">선수 얼굴 사진 Upload</label><input type="file" id="pPhoto" accept="image/*" class="w-full text-xs"></div>
+                <div>
+                    <label class="block font-bold mb-1">선수 얼굴 사진 Upload</label>
+                    <div class="flex items-center gap-3">
+                        <div id="pPhotoPreview" class="w-16 h-16 rounded-full bg-slate-200 overflow-hidden shrink-0 flex items-center justify-center text-slate-400 border"><i class="fa-solid fa-user text-xl"></i></div>
+                        <div class="flex-1 space-y-1">
+                            <input type="file" id="pPhoto" accept="image/*" onchange="previewPlayerPhoto(this)" class="w-full text-xs">
+                            <button type="button" id="pPhotoClear" onclick="clearPlayerPhoto()" class="hidden text-[11px] text-red-500 font-bold">사진 지우기</button>
+                        </div>
+                    </div>
+                </div>
                 <button onclick="savePlayer('${autoRegNum}')" class="w-full bg-jokgu-600 text-white font-bold py-2 rounded-xl mt-2">선수 등록 완료</button>
             `;
             openModal();
@@ -1058,11 +1068,13 @@
                 address: document.getElementById('pAddr').value,
                 photo: ''
             };
+            newPlayer.photo = playerPhotoDraft;   // 미리보기로 확인한 사진
             const file = document.getElementById('pPhoto').files[0];
-            if (file) {
+            if (!newPlayer.photo && file) {       // 미리보기 처리가 끝나기 전에 저장한 경우
                 try { newPlayer.photo = await blobToDataURL(await compressImage(file, 160, 160, 0.6)); }
                 catch (e) { alert('사진 처리에 실패했습니다.'); return; }
             }
+            playerPhotoDraft = '';
             players.push(newPlayer);
             saveClubData();
             renderPlayerList();
@@ -2152,6 +2164,27 @@ function openNoticeModal() {
             if (leagueLoaded) return;
             leagueLoaded = true;
             document.getElementById('leagueFrame').srcdoc = LEAGUE_HTML;
+        }
+
+        // --- 선수 사진 미리보기 (저장될 모습 그대로: 압축된 160px 원형) ---
+        let playerPhotoDraft = '';
+        async function previewPlayerPhoto(input) {
+            const box = document.getElementById('pPhotoPreview'), clr = document.getElementById('pPhotoClear');
+            const file = input.files && input.files[0];
+            if (!file) { clearPlayerPhoto(); return; }
+            if (!String(file.type).startsWith('image/')) { alert('이미지 파일만 선택할 수 있습니다.'); clearPlayerPhoto(); return; }
+            try {
+                playerPhotoDraft = await blobToDataURL(await compressImage(file, 160, 160, 0.6));
+                box.innerHTML = `<img src="${playerPhotoDraft}" class="w-full h-full object-cover">`;
+                clr.classList.remove('hidden');
+            } catch (e) { console.error(e); alert('사진을 불러오지 못했습니다.'); clearPlayerPhoto(); }
+        }
+        function clearPlayerPhoto() {
+            playerPhotoDraft = '';
+            const input = document.getElementById('pPhoto'), box = document.getElementById('pPhotoPreview'), clr = document.getElementById('pPhotoClear');
+            if (input) input.value = '';
+            if (box) box.innerHTML = '<i class="fa-solid fa-user text-xl"></i>';
+            if (clr) clr.classList.add('hidden');
         }
 
         // --- 이미지 첨부 (여러 장 선택 → 압축 → 저장 전 미리보기) : 현역/회칙, 공지사항 공용 ---
